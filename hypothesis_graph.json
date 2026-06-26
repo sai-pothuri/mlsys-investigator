@@ -1,0 +1,77 @@
+{
+  "alert_summary": "ALERT: Model accuracy dropped from 0.91 to 0.74 over the past 8 hours. No infrastructure errors reported. Engineers unsure if the model degraded or if something changed in the evaluation pipeline.",
+  "investigation_start": "2026-06-26T18:56:42.393980Z",
+  "tool_calls_used": 2,
+  "tool_call_budget": 8,
+  "hypotheses": [
+    {
+      "id": "H1",
+      "root_cause_category": "feature_drift",
+      "description": "Input feature distributions have shifted from the training distribution",
+      "likelihood": 0.12,
+      "severity": "high",
+      "status": "ruled_out",
+      "evidence": [],
+      "distinguishing_experiments": []
+    },
+    {
+      "id": "H2",
+      "root_cause_category": "bad_deployment",
+      "description": "A recent model or code deployment introduced a regression",
+      "likelihood": 0.16999999999999998,
+      "severity": "high",
+      "status": "ruled_out",
+      "evidence": [],
+      "distinguishing_experiments": []
+    },
+    {
+      "id": "H3",
+      "root_cause_category": "label_pipeline_corruption",
+      "description": "The label pipeline is producing corrupted ground-truth labels",
+      "likelihood": 1.0,
+      "severity": "medium",
+      "status": "active",
+      "evidence": [
+        {
+          "tool_called": "query_metrics",
+          "evidence_type": "metrics",
+          "observation": "accuracy \u221217pp but prediction_confidence stable (0.84\u21920.83, \u22120.01); error_rate and latency flat. Stable model confidence with accuracy drop is the fingerprint of label corruption, not model or data degradation.",
+          "supports": true,
+          "confidence_delta": 0.22
+        },
+        {
+          "tool_called": "query_logs",
+          "evidence_type": "logs",
+          "observation": "label_pipeline join key changed session_id\u2192request_id at 07:14 UTC; label alignment rate dropped from ~99% to 61.2%; 847 predictions marked incorrect due to missing label match.",
+          "supports": true,
+          "confidence_delta": 0.25
+        }
+      ],
+      "distinguishing_experiments": []
+    },
+    {
+      "id": "H4",
+      "root_cause_category": "training_serving_skew",
+      "description": "Feature transformations differ between training and serving environments",
+      "likelihood": 0.0,
+      "severity": "medium",
+      "status": "ruled_out",
+      "evidence": [],
+      "distinguishing_experiments": []
+    }
+  ],
+  "established_facts": [
+    "Prediction confidence stable (0.84\u21920.83) despite 17pp accuracy drop.",
+    "Stable confidence + accuracy drop = model is healthy, evaluation labels are wrong.",
+    "Label pipeline join key changed session_id\u2192request_id at 07:14 UTC.",
+    "Label alignment rate: 61.2% (down from ~99%) \u2014 38.8% of labels are wrong.",
+    "Accuracy drop is a measurement artifact. Model performance is unchanged."
+  ],
+  "open_questions": [
+    "How large is the accuracy drop, and did prediction confidence also degrade?",
+    "Are there any recent deployments that could explain the timing?",
+    "Are there errors or anomalies in the feature pipeline or label pipeline?"
+  ],
+  "current_focus": "H3",
+  "termination_reason": null
+}
