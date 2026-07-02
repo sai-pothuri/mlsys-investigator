@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Claude Code local settings
+.claude/
+
+# Model artifacts (generated, not checked in)
+ml-system/ml/model/
+ml-system/ml/data/
+
+# Misc
+.DS_Store
+*.log

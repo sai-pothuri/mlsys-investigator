@@ -1,0 +1,63 @@
+@startuml ML_Investigator_Component_Diagram
+title Component Diagram — ML Investigator (Internal Architecture)
+
+skinparam component {
+  BackgroundColor #E8F0FE
+  BorderColor #1A73E8
+  FontSize 13
+}
+skinparam package {
+  BackgroundColor #FAFAFA
+  BorderColor #5F6368
+}
+skinparam ArrowColor #5F6368
+skinparam ArrowFontSize 11
+
+package "ML Investigator" {
+  component "ReAct Loop\n(Orchestrator)" as ReAct
+  component "Tool Dispatcher" as Dispatcher
+  component "Hypothesis Graph\nModule" as Graph
+  component "Stopping Criteria" as Stop
+  component "Output Validator" as Validator
+  component "Observability Layer" as Obs
+}
+
+component "Anthropic API\n(Claude)" as Claude <<external>>
+component "Evidence Sources\n(metrics, logs, deploys,\nfeatures, code diffs)" as Evidence <<external>>
+component "Langfuse" as Langfuse <<external>>
+actor "Practitioner" as User
+
+' --- Control flow: reasoning ---
+User --> ReAct : Investigation request
+ReAct --> Claude : Reasoning request\n(prompt + tool defs)
+Claude --> ReAct : Thought + action
+
+' --- Control flow: tool execution ---
+ReAct --> Dispatcher : Dispatch tool call
+Dispatcher --> Evidence : Execute query
+Evidence --> Dispatcher : Raw evidence
+Dispatcher --> ReAct : Tool result
+
+' --- State update ---
+ReAct --> Graph : Update hypotheses\n(new evidence + reasoning)
+
+' --- Termination check (Stop queries shared state directly) ---
+ReAct --> Stop : Check termination
+Stop --> Graph : Query confidence /\ncalibration state
+Graph --> Stop : State snapshot
+Stop --> ReAct : Continue / Stop
+
+' --- Finalization (Validator queries shared state directly) ---
+ReAct --> Validator : Finalize
+Validator --> Graph : Fetch final\nhypothesis set
+Graph --> Validator : Final graph
+Validator --> ReAct : Validated report /\nvalidation error
+ReAct --> User : Ranked root-cause report
+
+' --- Cross-cutting observability ---
+ReAct ..> Obs : trace span
+Dispatcher ..> Obs : trace span
+Graph ..> Obs : trace span
+Obs ..> Langfuse : export traces
+
+@enduml
