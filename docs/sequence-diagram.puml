@@ -1,0 +1,58 @@
+@startuml ML_Investigator_Sequence_Diagram
+title Sequence Diagram — Full Diagnosis Session (Alert → Output)
+
+skinparam sequence {
+  ArrowColor #5F6368
+  LifeLineBorderColor #5F6368
+  ParticipantBackgroundColor #E8F0FE
+  ParticipantBorderColor #1A73E8
+  ActorBackgroundColor #FFF3CD
+  ActorBorderColor #B38600
+}
+
+actor "Practitioner" as User
+box "ML Investigator" #FAFAFA
+  participant "ReAct Loop" as ReAct
+  participant "Tool Dispatcher" as Dispatcher
+  participant "Hypothesis Graph" as Graph
+  participant "Stopping Criteria" as Stop
+  participant "Output Validator" as Validator
+  participant "Observability Layer" as Obs
+end box
+participant "Anthropic API\n(Claude)" as Claude <<external>>
+participant "Evidence Sources" as Evidence <<external>>
+participant "Langfuse" as Langfuse <<external>>
+
+User -> ReAct : Investigation request\n(alert-triggered)
+activate ReAct
+
+loop ReAct iteration (until Stop = STOP or max_iterations)
+  ReAct -> Claude : Reasoning request\n(graph state + history)
+  Claude --> ReAct : Thought + tool call
+
+  ReAct -> Dispatcher : Dispatch tool call
+  Dispatcher -> Evidence : Execute query
+  Evidence --> Dispatcher : Raw evidence
+  Dispatcher --> ReAct : Tool result
+
+  ReAct -> Graph : Update hypotheses\n(evidence + reasoning)
+
+  ReAct -> Stop : Check termination
+  Stop --> ReAct : Continue / Stop
+
+  note over ReAct, Graph #FFFDE7
+    Each iteration: ReAct, Dispatcher, and Graph
+    emit trace spans to Observability Layer
+    (omitted as arrows to reduce clutter)
+  end note
+end
+
+ReAct -> Validator : Finalize
+Validator --> ReAct : Validated report\n(or validation error)
+
+ReAct -> User : Ranked root-cause report
+deactivate ReAct
+
+Obs -> Langfuse : Export full session trace
+
+@enduml
