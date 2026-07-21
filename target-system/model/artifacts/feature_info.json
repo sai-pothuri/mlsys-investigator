@@ -1,0 +1,141 @@
+{
+  "feature_names": [
+    "account_age_days",
+    "monthly_spend",
+    "num_transactions_30d",
+    "avg_transaction_value",
+    "days_since_last_login",
+    "support_tickets_90d",
+    "product_category",
+    "region",
+    "device_type",
+    "login_failure_rate",
+    "session_duration_min",
+    "referral_source"
+  ],
+  "ground_truth_weights": [
+    -0.001,
+    -0.0005,
+    -0.008,
+    -0.003,
+    0.15,
+    0.2,
+    -0.3,
+    0.05,
+    0.1,
+    1.5,
+    -0.015,
+    0.05
+  ],
+  "ground_truth_bias": 0.35,
+  "training_stats": {
+    "n_train": 40000,
+    "n_val": 10000,
+    "train_churn_rate": 0.273275,
+    "val_accuracy": 0.8656,
+    "val_mean_proba": 0.27306079864501953
+  },
+  "feature_distributions": {
+    "account_age_days": {
+      "distribution": "normal",
+      "mean": 730,
+      "std": 200
+    },
+    "monthly_spend": {
+      "distribution": "lognormal",
+      "mean": 5.5,
+      "std": 0.8
+    },
+    "num_transactions_30d": {
+      "distribution": "normal",
+      "mean": 42,
+      "std": 15
+    },
+    "avg_transaction_value": {
+      "distribution": "lognormal",
+      "mean": 4.0,
+      "std": 0.6
+    },
+    "days_since_last_login": {
+      "distribution": "normal",
+      "mean": 3,
+      "std": 2,
+      "clip_low": 0
+    },
+    "support_tickets_90d": {
+      "distribution": "normal",
+      "mean": 1.2,
+      "std": 1.5,
+      "clip_low": 0
+    },
+    "product_category": {
+      "distribution": "categorical",
+      "categories": [
+        0,
+        1,
+        2
+      ],
+      "probs": [
+        0.5,
+        0.35,
+        0.15
+      ]
+    },
+    "region": {
+      "distribution": "categorical",
+      "categories": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "probs": [
+        0.2,
+        0.3,
+        0.25,
+        0.15,
+        0.1
+      ]
+    },
+    "device_type": {
+      "distribution": "categorical",
+      "categories": [
+        0,
+        1,
+        2
+      ],
+      "probs": [
+        0.55,
+        0.35,
+        0.1
+      ]
+    },
+    "login_failure_rate": {
+      "distribution": "uniform",
+      "low": 0,
+      "high": 0.3
+    },
+    "session_duration_min": {
+      "distribution": "normal",
+      "mean": 18,
+      "std": 8,
+      "clip_low": 0
+    },
+    "referral_source": {
+      "distribution": "categorical",
+      "categories": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "probs": [
+        0.25,
+        0.35,
+        0.25,
+        0.15
+      ]
+    }
+  }
+}

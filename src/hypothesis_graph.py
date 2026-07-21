@@ -140,6 +140,11 @@ _MAX_LIKELIHOOD_DELTA = 0.25  # cap per spec §5.3
 def update_graph(graph: HypothesisGraph, update: GraphUpdate) -> HypothesisGraph:
     """Apply a GraphUpdate delta in-place. Returns the mutated graph."""
     # Attach evidence to current_focus hypothesis (evidence always belongs to one hypothesis).
+    if graph.current_focus is None:
+        raise ValueError("update_graph called with current_focus=None; set graph.current_focus before updating")
+    existing_ids = {h.id for h in graph.hypotheses}
+    if graph.current_focus not in existing_ids:
+        raise ValueError(f"current_focus {graph.current_focus!r} does not match any hypothesis ID in the graph")
     evidence = Evidence.from_input(update.new_evidence)
     for h in graph.hypotheses:
         if h.id == graph.current_focus:
