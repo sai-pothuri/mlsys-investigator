@@ -33,6 +33,14 @@ def validate_graph_update(update: GraphUpdate, graph: HypothesisGraph) -> Valida
     errors: List[str] = []
     existing_ids = {h.id for h in graph.hypotheses}
 
+    # 0. current_focus must be set and point to a real hypothesis
+    if graph.current_focus is None:
+        errors.append("graph.current_focus is None — must be set to a hypothesis ID before calling update")
+    elif graph.current_focus not in existing_ids:
+        errors.append(
+            f"graph.current_focus {graph.current_focus!r} does not match any hypothesis ID in the graph"
+        )
+
     # 1. tool_called must be registered
     if update.new_evidence.tool_called not in TOOL_TO_EVIDENCE_TYPE:
         errors.append(

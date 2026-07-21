@@ -136,6 +136,30 @@ def _graph_context(graph: HypothesisGraph) -> str:
     return "\n".join(lines)
 
 
+# ── Top-suspect display ───────────────────────────────────────────────────────
+
+def print_top_hypothesis(graph: HypothesisGraph) -> None:
+    """Print the highest-likelihood active hypothesis in a format readable at a glance."""
+    active = [h for h in graph.hypotheses if h.status == HypothesisStatus.ACTIVE]
+    if not active:
+        print("\n  [no active hypotheses remaining]")
+        return
+    top = max(active, key=lambda h: h.likelihood)
+    bar = "█" * round(top.likelihood * 20) + "░" * (20 - round(top.likelihood * 20))
+    supporting = sum(1 for e in top.evidence if e.supports)
+
+    print(f"\n  {'─' * 60}")
+    print(f"  MOST LIKELY ROOT CAUSE")
+    print(f"  {'─' * 60}")
+    print(f"  {top.root_cause_category.value.upper().replace('_', ' ')}  "
+          f"[{bar}]  {top.likelihood:.0%}")
+    print(f"  Severity   : {top.severity.value}")
+    print(f"  Hypothesis : {top.description}")
+    if top.evidence:
+        print(f"  Evidence   : {supporting}/{len(top.evidence)} pieces support this")
+    print(f"  {'─' * 60}")
+
+
 # ── Result type ───────────────────────────────────────────────────────────────
 
 @dataclass
@@ -293,4 +317,5 @@ if __name__ == "__main__":
         print("FINAL DIAGNOSIS")
         print(final_diagnosis)
     else:
-        print("\n[No diagnosis produced]")
+        print_top_hypothesis(final_graph)
+        print("\n[Investigation ended without a diagnosis — see top suspect above]")

@@ -19,7 +19,7 @@ import sys
 import time
 
 from hypothesis_graph import HypothesisGraph, HypothesisStatus, update_graph
-from agent import build_initial_graph, _graph_context
+from agent import build_initial_graph, _graph_context, print_top_hypothesis
 from output_validator import validate_graph_update
 from persistence import snapshot_graph
 from scenarios import SCENARIOS, Scenario
@@ -114,6 +114,7 @@ def run_mock(scenario: Scenario) -> None:
             snapshot_graph(graph)
             applied_count += 1
             _section("Graph state after update", _graph_summary(graph))
+            print_top_hypothesis(graph)
         else:
             rejected_count += 1
             _section(
@@ -128,6 +129,7 @@ def run_mock(scenario: Scenario) -> None:
     print(f"  Fixtures applied  : {applied_count}")
     print(f"  Fixtures rejected : {rejected_count}")
     print(f"\n  Ground truth: {scenario.ground_truth}")
+    print_top_hypothesis(graph)
     print()
     print(_graph_context(graph))
 

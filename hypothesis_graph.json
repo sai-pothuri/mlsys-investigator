@@ -1,6 +1,6 @@
 {
   "alert_summary": "ALERT: Model accuracy dropped from 0.91 to 0.74 over the past 8 hours. No infrastructure errors reported. Engineers unsure if the model degraded or if something changed in the evaluation pipeline.",
-  "investigation_start": "2026-06-26T18:56:42.393980Z",
+  "investigation_start": "2026-07-03T20:44:02.726257Z",
   "tool_calls_used": 2,
   "tool_call_budget": 8,
   "hypotheses": [
