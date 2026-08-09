@@ -46,12 +46,14 @@ def _graph_summary(graph: HypothesisGraph) -> str:
     active = [h for h in graph.hypotheses if h.status == HypothesisStatus.ACTIVE]
     ruled  = [h for h in graph.hypotheses if h.status == HypothesisStatus.RULED_OUT]
     for h in sorted(active, key=lambda x: -x.likelihood):
+        cat = h.root_cause_category.value if h.root_cause_category else "–"
         lines.append(
-            f"  {h.id}  {h.root_cause_category.value:<30}  "
+            f"  {h.id}  {cat:<30}  "
             f"likelihood={h.likelihood:.3f}  [{h.status.value}]"
         )
     for h in ruled:
-        lines.append(f"  {h.id}  {h.root_cause_category.value:<30}  [{h.status.value}]")
+        cat = h.root_cause_category.value if h.root_cause_category else "–"
+        lines.append(f"  {h.id}  {cat:<30}  [{h.status.value}]")
     if graph.established_facts:
         lines.append("  established facts:")
         for f in graph.established_facts:
@@ -88,16 +90,21 @@ def run_mock(scenario: Scenario) -> None:
 
         _section("Observation", fixture.observation)
 
-        graph.current_focus = fixture.current_focus
         result = validate_graph_update(fixture.update, graph)
 
+        action = fixture.update.action
+        action_detail = {
+            "update": f"current_focus={fixture.update.current_focus}",
+            "create": f"description='{fixture.update.new_hypothesis_description}'",
+            "merge":  f"merge_into_id={fixture.update.merge_into_id}",
+        }.get(action, "")
         _section("GraphUpdate", (
+            f"action : {action}  ({action_detail})\n"
             f"new_evidence : tool={fixture.update.new_evidence.tool_called}"
             f"  supports={fixture.update.new_evidence.supports}"
             f"  delta={fixture.update.new_evidence.confidence_delta:+.2f}\n"
             f"likelihood_changes : {fixture.update.likelihood_changes}\n"
-            f"rule_out : {fixture.update.hypotheses_to_rule_out}\n"
-            f"new_hypotheses : {[h.id for h in fixture.update.new_hypotheses]}"
+            f"rule_out : {fixture.update.hypotheses_to_rule_out}"
         ))
 
         _section("Validation", str(result))

@@ -5,8 +5,11 @@ Three scenarios, each representing a distinct failure category:
   bad_deployment   — new model artifact has a feature normalization shape mismatch
   label_corruption — label pipeline join key change misaligns evaluation labels
 
-Each scenario is self-contained: its own alert text, ground truth, tool
-responses, and GraphUpdate fixture sequence.
+Each scenario starts from an EMPTY hypothesis graph. The first fixture in every
+scenario uses action="create" to add the first hypothesis. Subsequent fixtures may
+use action="create" (new competing hypothesis), action="update" (existing hypothesis),
+or action="merge". likelihood_changes and hypotheses_to_rule_out may only reference
+IDs created in earlier turns of the same scenario.
 
 Usage:
   PYTHONPATH=src python3 src/run_mock.py --scenario bad_deployment
@@ -17,14 +20,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from fixtures import Fixture
-from hypothesis_graph import (
-    EvidenceInput,
-    FailureCategory,
-    GraphUpdate,
-    Hypothesis,
-    HypothesisStatus,
-    Severity,
-)
+from hypothesis_graph import EvidenceInput, GraphUpdate
 
 
 # ── Scenario dataclass ────────────────────────────────────────────────────────
@@ -41,7 +37,8 @@ class Scenario:
 
 # ── Shared malformed fixture (reused across all scenarios) ────────────────────
 # Tests that the Output Validator catches hallucinated hypothesis IDs.
-# H99 and H88 never exist in any scenario's initial graph.
+# H1 is created in Turn 1 of every scenario — current_focus="H1" is valid.
+# H99 and H88 are never created — the validator must reject the whole update.
 
 _MALFORMED_FIXTURE = Fixture(
     label="MALFORMED — HALLUCINATED HYPOTHESIS ID",
@@ -57,23 +54,23 @@ _MALFORMED_FIXTURE = Fixture(
     observation="(this turn should be rejected before the update is applied)",
     current_focus="H1",
     update=GraphUpdate(
+        action="update",
+        current_focus="H1",  # H1 exists from Turn 1 of every scenario ✓
         new_evidence=EvidenceInput(
-            tool_called="query_deployment_history",  # unregistered in MVP
+            tool_called="query_deployment_history",
             observation="No deployments found.",
             supports=False,
             confidence_delta=-0.10,
         ),
         likelihood_changes={"H1": -0.05, "H99": +0.40},  # H99 hallucinated
         hypotheses_to_rule_out=["H88"],                    # H88 hallucinated
-        new_hypotheses=[],
-        new_established_facts=[],
         next_experiment_rationale="Updating H99 based on deployment check.",
     ),
     expect_valid=False,
 )
 
 
-# ── Shared metrics response builder ───────────────────────────────────────────
+# ── Shared response builders ──────────────────────────────────────────────────
 
 def _metrics_response(
     inputs: dict,
@@ -112,6 +109,34 @@ def _logs_response(tool_name: str, service: str, entries: list[dict],
     }
 
 
+def _deployments_response(deployments: list[dict]) -> dict:
+    return {
+        "tool_name": "query_deployment_history", "status": "ok",
+        "data": {"deployments": deployments},
+        "query_metadata": {"latency_ms": 5, "result_count": len(deployments)},
+    }
+
+
+def _no_drift_response(features: list[str]) -> dict:
+    return {
+        "tool_name": "query_feature_distributions", "status": "ok",
+        "data": {
+            "results": [
+                {
+                    "feature_name": f,
+                    "drift_score": 0.004,
+                    "drift_metric_used": "psi",
+                    "exceeds_threshold": False,
+                    "baseline_mean": None,
+                    "comparison_mean": None,
+                }
+                for f in features
+            ]
+        },
+        "query_metadata": {"latency_ms": 60, "result_count": len(features)},
+    }
+
+
 def _unknown_tool(tool_name: str) -> dict:
     return {
         "tool_name": tool_name, "status": "error",
@@ -128,7 +153,7 @@ def _unknown_tool(tool_name: str) -> dict:
 # The feature pipeline silently fell back to row insertion_timestamp, producing
 # feature_age_days values up to 847 days (expected 0–365).
 # Discriminating signals:
-#   • accuracy ↓  prediction_confidence ↓  (model is getting bad inputs)
+#   • accuracy ↓  prediction_confidence ↓  (model gets bad inputs)
 #   • latency flat, error_rate flat         (not an infra or deployment issue)
 #   • feature_pipeline logs: schema errors + upstream column removal message
 
@@ -180,11 +205,11 @@ def _dispatch_feature_drift(tool_name: str, inputs: dict) -> dict:
 
 _FEATURE_DRIFT_FIXTURES = [
     Fixture(
-        label="NORMAL EVIDENCE UPDATE",
+        label="CREATE H1 — quality metrics drop, no infra signal",
         thought=(
-            "I'll start with metrics to quantify the degradation and check "
-            "whether the pattern is consistent with a model quality issue "
-            "or an infrastructure failure."
+            "Graph is empty. I'll start with metrics to quantify the degradation "
+            "and look for signals that distinguish a data issue from an infra failure. "
+            "I'll create my first hypothesis from whatever the metrics tell me."
         ),
         tool_called="query_metrics",
         tool_inputs={
@@ -194,49 +219,66 @@ _FEATURE_DRIFT_FIXTURES = [
         },
         observation=(
             "accuracy: 0.91→0.76 (−0.15), prediction_confidence: 0.84→0.61 (−0.23). "
-            "latency_p99 and error_rate are flat. Both quality metrics degraded "
-            "with no infra signal — consistent with bad input data."
+            "latency_p99 and error_rate flat. Both quality metrics degraded "
+            "simultaneously with no infra signal — consistent with OOD inputs."
         ),
-        current_focus="H1",
+        current_focus="H1",  # display only — H1 is being created this turn
         update=GraphUpdate(
+            action="create",
+            new_hypothesis_description=(
+                "Input feature distributions have shifted from the training distribution — "
+                "model receives OOD inputs, causing simultaneous accuracy and confidence "
+                "degradation with flat error_rate and latency"
+            ),
+            new_hypothesis_severity="high",
+            new_hypothesis_initial_likelihood=0.60,
             new_evidence=EvidenceInput(
                 tool_called="query_metrics",
                 observation=(
                     "accuracy dropped 0.91→0.76 (−15pp) and prediction_confidence "
-                    "0.84→0.61 (−23pp); latency_p99 and error_rate unchanged — no infra signal."
+                    "0.84→0.61 (−23pp); latency_p99 and error_rate unchanged — "
+                    "quality drop with no infra signal points to data quality issue."
                 ),
                 supports=True,
                 confidence_delta=0.20,
             ),
-            likelihood_changes={"H1": +0.20, "H2": -0.08, "H3": -0.06, "H4": -0.04},
+            likelihood_changes={},  # only hypothesis — nothing else to adjust
             new_established_facts=[
                 "Accuracy degraded 15pp and prediction_confidence 23pp over 6 hours.",
                 "Latency and error_rate flat — no infrastructure degradation.",
             ],
             next_experiment_rationale=(
-                "Flat error_rate weakens bad_deployment (H2); I'll query "
-                "inference_service logs to rule it out."
+                "H1 created. Flat error_rate weakens bad_deployment; querying "
+                "inference_service logs to check for deployments and confirm."
             ),
         ),
     ),
     Fixture(
-        label="HYPOTHESIS RULED OUT",
+        label="CREATE H2 — serving regression alternative (immediately contradicted)",
         thought=(
-            "The flat error_rate already weakened bad_deployment. I'll check "
-            "inference_service logs for recent deployments or serving errors."
+            "Flat error_rate already weakens bad_deployment but I haven't confirmed "
+            "the serving layer is healthy. I'll query inference_service logs and create "
+            "a bad_deployment hypothesis to track the evidence against it."
         ),
         tool_called="query_logs",
         tool_inputs={
             "service": "inference_service",
             "time_range": {"start": "2026-06-25T02:00:00Z", "end": "2026-06-25T08:00:00Z"},
-            "severity": ["error", "warning"],
+            "severity": ["error", "warning", "info"],
         },
         observation=(
             "inference_service: serving model v3.2.1 unchanged, no deployments "
-            "in past 48h, throughput nominal at 481 req/s. Zero errors."
+            "in past 48h, throughput 481 req/s. Zero errors — serving layer clean."
         ),
-        current_focus="H2",
+        current_focus="H2",  # display only — H2 is being created this turn
         update=GraphUpdate(
+            action="create",
+            new_hypothesis_description=(
+                "A recent model or code deployment introduced a serving-layer regression — "
+                "scaler mismatch, wrong model version, or broken preprocessing"
+            ),
+            new_hypothesis_severity="high",
+            new_hypothesis_initial_likelihood=0.10,
             new_evidence=EvidenceInput(
                 tool_called="query_logs",
                 observation=(
@@ -244,25 +286,24 @@ _FEATURE_DRIFT_FIXTURES = [
                     "in past 48h, throughput 481 req/s, zero errors."
                 ),
                 supports=False,
-                confidence_delta=-0.30,
+                confidence_delta=-0.25,
             ),
-            likelihood_changes={"H2": -0.25},
-            hypotheses_to_rule_out=["H2"],
+            likelihood_changes={"H1": +0.05},  # H1 exists from Turn 1 ✓
             new_established_facts=[
                 "No model or code deployments in the past 48 hours.",
                 "inference_service is healthy — not the failure origin.",
             ],
             next_experiment_rationale=(
-                "H2 ruled out. H1 (feature_drift) is highest-likelihood. "
-                "Querying feature_pipeline logs next."
+                "H2 created and already contradicted. H1 remains primary. "
+                "Querying feature_pipeline logs to find the drift mechanism."
             ),
         ),
     ),
     Fixture(
-        label="SURPRISING RESULT — NEW HYPOTHESIS",
+        label="CREATE H3 — upstream schema change (specific mechanism); rule out H2",
         thought=(
-            "H1 (feature_drift) is highest-likelihood. I'll query feature_pipeline "
-            "logs for validation errors that explain why features shifted."
+            "H1 (feature drift) is highest-likelihood. I'll query feature_pipeline "
+            "logs to look for validation errors explaining why features shifted."
         ),
         tool_called="query_logs",
         tool_inputs={
@@ -271,45 +312,42 @@ _FEATURE_DRIFT_FIXTURES = [
             "severity": ["error", "warning", "info"],
         },
         observation=(
-            "feature_pipeline logs: 'feature_age_days' spiked to 847.3 (expected 0–365). "
-            "CRITICAL: upstream 'customer_events' table missing column 'event_date'; "
-            "pipeline fell back to row insertion_timestamp. 168 validation failures suppressed silently."
+            "feature_pipeline logs: schema validation ERRORS — 'feature_age_days' spiked "
+            "to 847.3 (expected 0–365). CRITICAL: upstream 'customer_events' table is "
+            "MISSING column 'event_date'; pipeline fell back to row insertion_timestamp. "
+            "168 validation failures suppressed silently."
         ),
-        current_focus="H1",
+        current_focus="H3",  # display only — H3 is being created this turn
         update=GraphUpdate(
+            action="create",
+            new_hypothesis_description=(
+                "Upstream 'customer_events' dropped column 'event_date'; "
+                "feature_pipeline silently fell back to insertion_timestamp, "
+                "producing out-of-range feature_age_days values (up to 847 days)"
+            ),
+            new_hypothesis_severity="critical",
+            new_hypothesis_initial_likelihood=0.40,
             new_evidence=EvidenceInput(
                 tool_called="query_logs",
                 observation=(
-                    "feature_pipeline: schema validation errors — feature_age_days up to 847.3 "
-                    "(expected ≤365); upstream customer_events missing event_date column; "
-                    "pipeline silently using insertion_timestamp; 168 failures suppressed."
+                    "feature_pipeline: schema validation errors — feature_age_days up "
+                    "to 847.3 (expected ≤365); upstream customer_events missing "
+                    "event_date column; pipeline silently using insertion_timestamp; "
+                    "168 failures suppressed with defaults."
                 ),
                 supports=True,
                 confidence_delta=0.25,
             ),
-            likelihood_changes={"H1": +0.25, "H3": -0.15},
-            new_hypotheses=[
-                Hypothesis(
-                    id="H5",
-                    root_cause_category=FailureCategory.FEATURE_DRIFT,
-                    description=(
-                        "Upstream 'customer_events' dropped column 'event_date'; "
-                        "feature_pipeline fell back to insertion_timestamp, producing "
-                        "out-of-range feature_age_days values (up to 847 days)"
-                    ),
-                    likelihood=0.40,
-                    severity=Severity.CRITICAL,
-                    status=HypothesisStatus.ACTIVE,
-                    evidence=[],
-                ),
-            ],
+            # H1 and H2 both exist from Turns 1 and 2 ✓
+            likelihood_changes={"H1": +0.25, "H2": -0.25},
+            hypotheses_to_rule_out=["H2"],  # H2 exists from Turn 2 ✓
             new_established_facts=[
                 "feature_pipeline has active schema validation errors on feature_age_days.",
                 "Upstream customer_events table is missing event_date column.",
                 "Pipeline silently using insertion_timestamp as fallback.",
             ],
             next_experiment_rationale=(
-                "H5 is now the most specific and best-supported hypothesis. "
+                "H3 is the most specific and best-supported hypothesis. "
                 "Evidence sufficient to call stop_investigation."
             ),
         ),
@@ -357,6 +395,19 @@ def _dispatch_bad_deployment(tool_name: str, inputs: dict) -> dict:
             "error_rate":            (0.019, 0.002),   # SPIKE — key signal
             "throughput":            (476.0, 481.0),
         })
+    if tool_name == "query_deployment_history":
+        return _deployments_response([{
+            "deploy_id": "b3254217-0371-42bd-b8ee-8dafa54fe0a5",
+            "timestamp": "2026-06-25T14:58:00+00:00",
+            "service": "inference_service",
+            "version_before": "v3.2.1",
+            "version_after": "v3.3.0",
+            "commit_sha": "23c603f791915fd1ca2b900236fcbe5c40be5c5c",
+            "change_type": "model_retrain",
+            "changelog": "Retrain XGBoost; updated feature normalization pipeline.",
+            "deployed_by": "alice",
+            "is_rollback": False,
+        }])
     if tool_name == "query_logs":
         service = inputs.get("service", "")
         sev = set(inputs.get("severity") or ["error", "warning", "info"])
@@ -380,18 +431,6 @@ def _dispatch_bad_deployment(tool_name: str, inputs: dict) -> dict:
                 {"timestamp": "2026-06-25T15:05:34Z", "service": "inference_service",
                  "severity": "error",
                  "message": "Prediction failed request_id=b3c1d9: ValueError: scaler expected input shape (1, 14), got (1, 28) — feature normalization mismatch"},
-                {"timestamp": "2026-06-25T15:10:00Z", "service": "inference_service",
-                 "severity": "info",
-                 "message": "Serving continues on v3.3.0 — auto-rollback not triggered (error rate below 5% threshold)"},
-            ], sev)
-        if service == "feature_pipeline":
-            return _logs_response(tool_name, service, [
-                {"timestamp": "2026-06-25T08:00:00Z", "service": "feature_pipeline",
-                 "severity": "info",
-                 "message": "Batch job completed normally: 14,203 records processed, 0 validation failures"},
-                {"timestamp": "2026-06-25T14:00:00Z", "service": "feature_pipeline",
-                 "severity": "info",
-                 "message": "Batch job completed normally: 14,311 records processed, 0 validation failures"},
             ], sev)
         return _logs_response(tool_name, service, [
             {"timestamp": "2026-06-25T07:00:00Z", "service": service,
@@ -402,11 +441,11 @@ def _dispatch_bad_deployment(tool_name: str, inputs: dict) -> dict:
 
 _BAD_DEPLOYMENT_FIXTURES = [
     Fixture(
-        label="ERROR RATE SPIKE POINTS TO CODE REGRESSION",
+        label="CREATE H1 — error_rate spike signals deployment regression",
         thought=(
-            "I'll start with metrics to quantify the degradation and look "
-            "for signals that distinguish a data issue from a code or model issue. "
-            "An error rate spike would strongly suggest a deployment regression."
+            "Graph is empty. Starting with metrics — an error_rate spike alongside "
+            "accuracy drop would strongly point to a code or model regression, "
+            "distinct from a data quality issue where error_rate stays flat."
         ),
         tool_called="query_metrics",
         tool_inputs={
@@ -417,11 +456,19 @@ _BAD_DEPLOYMENT_FIXTURES = [
         observation=(
             "accuracy dropped 0.91→0.73 (−18pp), error_rate spiked 0.002→0.019 (+850%), "
             "latency_p99 elevated 139→158ms. Prediction_confidence also degraded. "
-            "The error_rate spike is the key signal — feature drift or label issues "
-            "rarely cause serving errors, but a bad deployment does."
+            "The error_rate spike is the key signal — feature drift rarely causes "
+            "serving errors; a bad deployment does."
         ),
-        current_focus="H2",
+        current_focus="H1",  # display only — H1 is being created this turn
         update=GraphUpdate(
+            action="create",
+            new_hypothesis_description=(
+                "A recent model or code deployment introduced a regression — "
+                "error_rate spike and accuracy drop together indicate a hard serving-layer "
+                "failure, not gradual data drift"
+            ),
+            new_hypothesis_severity="critical",
+            new_hypothesis_initial_likelihood=0.65,
             new_evidence=EvidenceInput(
                 tool_called="query_metrics",
                 observation=(
@@ -432,23 +479,62 @@ _BAD_DEPLOYMENT_FIXTURES = [
                 supports=True,
                 confidence_delta=0.18,
             ),
-            likelihood_changes={"H2": +0.18, "H1": -0.10, "H3": -0.05, "H4": -0.03},
+            likelihood_changes={},  # only hypothesis — nothing else to adjust
             new_established_facts=[
                 "Accuracy dropped 18pp with error_rate spiking 850% — suggests code or model regression.",
                 "Latency_p99 elevated 19ms — consistent with error handling overhead.",
             ],
             next_experiment_rationale=(
-                "Error rate spike strongly suggests a deployment regression. "
-                "Querying inference_service logs for recent deployment events."
+                "H1 created. Error rate spike strongly suggests deployment regression. "
+                "Querying deployment history for a deploy event at the degradation onset."
             ),
         ),
     ),
     Fixture(
-        label="DEPLOYMENT EVENT CONFIRMS ROOT CAUSE",
+        label="UPDATE H1 — deployment event at exact degradation onset",
         thought=(
-            "The error rate spike points to a code-level failure. I'll check "
-            "inference_service logs for deployment events — a deployment that "
-            "coincides with the degradation window confirms bad_deployment."
+            "H1 (deployment regression) is highest-likelihood. I'll query deployment "
+            "history to find a deploy event that coincides with the start of degradation."
+        ),
+        tool_called="query_deployment_history",
+        tool_inputs={
+            "service": "inference_service",
+            "time_range": {"start": "2026-06-25T09:00:00Z", "end": "2026-06-25T22:00:00Z"},
+        },
+        observation=(
+            "Found deployment: inference_service v3.2.1 → v3.3.0 at 14:58 UTC today. "
+            "commit_sha=23c603f791915fd1. Degradation onset aligns exactly with deploy time."
+        ),
+        current_focus="H1",
+        update=GraphUpdate(
+            action="update",
+            current_focus="H1",  # H1 exists from Turn 1 ✓
+            new_evidence=EvidenceInput(
+                tool_called="query_deployment_history",
+                observation=(
+                    "Deployment: inference_service v3.2.1→v3.3.0 at 14:58 UTC — "
+                    "exact start of degradation window."
+                ),
+                supports=True,
+                confidence_delta=0.25,
+            ),
+            likelihood_changes={"H1": +0.25},  # H1 exists ✓
+            new_established_facts=[
+                "Model v3.3.0 deployed at 14:58 UTC — coincides exactly with degradation onset.",
+                "commit_sha: 23c603f791915fd1ca2b900236fcbe5c40be5c5c",
+            ],
+            next_experiment_rationale=(
+                "Deployment event confirmed. Querying inference_service logs to find "
+                "the specific error and confirm the regression mechanism."
+            ),
+        ),
+    ),
+    Fixture(
+        label="CREATE H2 — feature drift alternative; logs confirm deployment regression",
+        thought=(
+            "H1 (bad deployment) is dominant. Before stopping, I'll check inference "
+            "logs for the specific error and create a feature drift alternative to "
+            "ensure I'm not prematurely converging."
         ),
         tool_called="query_logs",
         tool_inputs={
@@ -457,33 +543,40 @@ _BAD_DEPLOYMENT_FIXTURES = [
             "severity": ["error", "warning", "info"],
         },
         observation=(
-            "Model v3.3.0 deployed at 14:58 UTC (7 hours ago). Error rate elevated "
-            "within 4 minutes of deployment. Error logs: 'ValueError: scaler expected "
-            "input shape (1, 14), got (1, 28)' — the new model's normalizer was trained "
-            "on 14 features; the serving pipeline now provides 28."
+            "Model v3.3.0 deployed at 14:58 UTC. Error rate elevated within 4 min of "
+            "deployment. Error logs: 'ValueError: scaler expected input shape (1, 14), "
+            "got (1, 28)' — the new model's normalizer was trained on 14 features; "
+            "the serving pipeline now provides 28."
         ),
-        current_focus="H2",
+        current_focus="H2",  # display only — H2 is being created this turn
         update=GraphUpdate(
+            action="create",
+            new_hypothesis_description=(
+                "Input feature distributions shifted independently of the deployment — "
+                "gradual drift causing accuracy degradation unrelated to v3.3.0"
+            ),
+            new_hypothesis_severity="medium",
+            new_hypothesis_initial_likelihood=0.05,
             new_evidence=EvidenceInput(
                 tool_called="query_logs",
                 observation=(
-                    "Model v3.3.0 deployed 14:58 UTC; errors began 15:02 UTC "
-                    "(4 min post-deploy); ValueError: feature normalization scaler "
-                    "shape mismatch (1,14) vs (1,28)."
+                    "Model v3.3.0 deployed 14:58 UTC; errors began 15:02 UTC (4 min post-deploy); "
+                    "ValueError: feature normalization scaler shape mismatch (1,14) vs (1,28) — "
+                    "deployment-specific error, not data drift."
                 ),
-                supports=True,
-                confidence_delta=0.25,
+                supports=False,
+                confidence_delta=-0.20,
             ),
-            likelihood_changes={"H2": +0.25, "H1": -0.15, "H3": -0.05, "H4": -0.05},
-            hypotheses_to_rule_out=["H1", "H3"],
+            # H1 exists from Turn 1 ✓
+            likelihood_changes={"H1": +0.15},
             new_established_facts=[
-                "Model v3.3.0 deployed at 14:58 UTC — 7 hours ago.",
-                "ValueError in feature normalization: scaler shape mismatch (1,14) vs (1,28).",
-                "Errors began 4 minutes post-deployment — confirms deployment as root cause.",
+                "Model v3.3.0 deployed at 14:58 UTC.",
+                "ValueError: feature normalization scaler shape mismatch (1,14) vs (1,28).",
+                "Errors began 4 minutes post-deployment — deployment is root cause.",
             ],
             next_experiment_rationale=(
                 "Deployment event at exact degradation onset with matching error signature. "
-                "Confidence sufficient to call stop_investigation."
+                "H1 is dominant; H2 contradicted. Confidence sufficient for stop_investigation."
             ),
         ),
     ),
@@ -530,6 +623,9 @@ def _dispatch_label_corruption(tool_name: str, inputs: dict) -> dict:
             "error_rate":            (0.002, 0.002),
             "throughput":            (480.0, 481.0),
         })
+    if tool_name == "query_feature_distributions":
+        features = inputs.get("features", ["account_age_days", "monthly_spend"])
+        return _no_drift_response(features)
     if tool_name == "query_logs":
         service = inputs.get("service", "")
         sev = set(inputs.get("severity") or ["error", "warning", "info"])
@@ -569,12 +665,11 @@ def _dispatch_label_corruption(tool_name: str, inputs: dict) -> dict:
 
 _LABEL_CORRUPTION_FIXTURES = [
     Fixture(
-        label="STABLE CONFIDENCE FINGERPRINTS LABEL CORRUPTION",
+        label="CREATE H1 — stable confidence fingerprints label corruption",
         thought=(
-            "I'll start with metrics, paying close attention to prediction_confidence. "
-            "If accuracy dropped but confidence is stable, the model isn't degrading — "
-            "it's being evaluated against wrong labels. If both dropped, the model "
-            "is receiving bad inputs (feature_drift or bad_deployment)."
+            "Graph is empty. Starting with metrics, paying close attention to "
+            "prediction_confidence. If accuracy dropped but confidence is stable, "
+            "the model isn't degrading — it's being evaluated against wrong labels."
         ),
         tool_called="query_metrics",
         tool_inputs={
@@ -585,11 +680,19 @@ _LABEL_CORRUPTION_FIXTURES = [
         observation=(
             "accuracy dropped 0.91→0.74 (−17pp) BUT prediction_confidence is essentially "
             "unchanged: 0.84→0.83 (−0.01). Error rate flat, latency flat. "
-            "The model is just as confident as before — it's not receiving bad inputs. "
-            "It's being evaluated against wrong labels."
+            "The model is just as confident as before — stable confidence with accuracy drop "
+            "is the fingerprint of label corruption."
         ),
-        current_focus="H3",
+        current_focus="H1",  # display only — H1 is being created this turn
         update=GraphUpdate(
+            action="create",
+            new_hypothesis_description=(
+                "The label pipeline is producing corrupted ground-truth labels — "
+                "stable model confidence while accuracy drops means the model is "
+                "healthy but being evaluated against wrong labels"
+            ),
+            new_hypothesis_severity="high",
+            new_hypothesis_initial_likelihood=0.65,
             new_evidence=EvidenceInput(
                 tool_called="query_metrics",
                 observation=(
@@ -600,23 +703,22 @@ _LABEL_CORRUPTION_FIXTURES = [
                 supports=True,
                 confidence_delta=0.22,
             ),
-            likelihood_changes={"H3": +0.22, "H1": -0.08, "H2": -0.08, "H4": -0.06},
+            likelihood_changes={},  # only hypothesis — nothing else to adjust
             new_established_facts=[
                 "Prediction confidence stable (0.84→0.83) despite 17pp accuracy drop.",
                 "Stable confidence + accuracy drop = model is healthy, evaluation labels are wrong.",
             ],
             next_experiment_rationale=(
-                "Stable confidence rules out feature_drift and bad_deployment (both degrade "
-                "model confidence). Querying label_pipeline logs directly."
+                "H1 created. Stable confidence rules out feature_drift and bad_deployment "
+                "(both degrade model confidence). Querying label_pipeline logs directly."
             ),
         ),
     ),
     Fixture(
-        label="LABEL PIPELINE JOIN KEY CHANGE CONFIRMED",
+        label="UPDATE H1 — label pipeline join key change confirmed",
         thought=(
-            "The stable confidence strongly points to H3 (label_pipeline_corruption). "
-            "I'll check label_pipeline logs for any configuration change or error "
-            "that would explain why labels are misaligned."
+            "H1 (label_pipeline_corruption) is dominant. I'll check label_pipeline "
+            "logs for any configuration change that explains the label misalignment."
         ),
         tool_called="query_logs",
         tool_inputs={
@@ -627,12 +729,13 @@ _LABEL_CORRUPTION_FIXTURES = [
         observation=(
             "Label pipeline config updated 8 hours ago to join on 'request_id' instead "
             "of 'session_id'. Since the two IDs don't correspond, 847 predictions could "
-            "not be matched to outcome labels. Label alignment rate dropped to 61.2% "
-            "(threshold 95%). 38.8% of labels are misaligned — accuracy drop is a "
-            "measurement artifact, not model degradation."
+            "not be matched. Label alignment rate dropped to 61.2% (threshold 95%). "
+            "38.8% of labels are misaligned — accuracy drop is a measurement artifact."
         ),
-        current_focus="H3",
+        current_focus="H1",
         update=GraphUpdate(
+            action="update",
+            current_focus="H1",  # H1 exists from Turn 1 ✓
             new_evidence=EvidenceInput(
                 tool_called="query_logs",
                 observation=(
@@ -643,16 +746,59 @@ _LABEL_CORRUPTION_FIXTURES = [
                 supports=True,
                 confidence_delta=0.25,
             ),
-            likelihood_changes={"H3": +0.25, "H1": -0.10, "H2": -0.05, "H4": -0.10},
-            hypotheses_to_rule_out=["H1", "H2", "H4"],
+            likelihood_changes={"H1": +0.25},  # H1 exists ✓
             new_established_facts=[
                 "Label pipeline join key changed session_id→request_id at 07:14 UTC.",
                 "Label alignment rate: 61.2% (down from ~99%) — 38.8% of labels are wrong.",
                 "Accuracy drop is a measurement artifact. Model performance is unchanged.",
             ],
             next_experiment_rationale=(
-                "Root cause confirmed: label_pipeline config change caused label misalignment. "
-                "Calling stop_investigation."
+                "H1 confirmed. Checking feature distributions to rule out concurrent "
+                "data drift as an alternative or co-cause."
+            ),
+        ),
+    ),
+    Fixture(
+        label="CREATE H2 — feature drift alternative; distributions clean",
+        thought=(
+            "H1 is dominant but I should rule out a concurrent feature drift. "
+            "I'll check feature distributions — if they're clean (PSI < 0.1), "
+            "it further confirms H1 as the sole root cause."
+        ),
+        tool_called="query_feature_distributions",
+        tool_inputs={
+            "features": ["account_age_days", "monthly_spend", "login_failure_rate"],
+            "baseline_window":   {"start": "2026-06-24T20:00:00Z", "end": "2026-06-25T02:00:00Z"},
+            "comparison_window": {"start": "2026-06-25T02:00:00Z", "end": "2026-06-25T08:00:00Z"},
+        },
+        observation=(
+            "Feature distributions are clean: all PSI scores < 0.01 (no significant drift). "
+            "account_age_days PSI=0.004, monthly_spend PSI=0.004, login_failure_rate PSI=0.004. "
+            "Input data is stable — feature drift is not contributing to the accuracy drop."
+        ),
+        current_focus="H2",  # display only — H2 is being created this turn
+        update=GraphUpdate(
+            action="create",
+            new_hypothesis_description=(
+                "Input feature distributions have shifted from the training distribution — "
+                "gradual drift causing the accuracy drop independently of label issues"
+            ),
+            new_hypothesis_severity="medium",
+            new_hypothesis_initial_likelihood=0.05,
+            new_evidence=EvidenceInput(
+                tool_called="query_feature_distributions",
+                observation=(
+                    "All features: PSI < 0.01 (no significant drift). "
+                    "Input distributions are stable — feature drift is not the cause."
+                ),
+                supports=False,
+                confidence_delta=-0.20,
+            ),
+            # H1 exists from Turn 1 ✓
+            likelihood_changes={"H1": +0.10},
+            next_experiment_rationale=(
+                "H2 created and immediately contradicted by clean feature distributions. "
+                "H1 is the sole root cause. Calling stop_investigation."
             ),
         ),
     ),

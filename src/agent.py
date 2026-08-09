@@ -9,18 +9,23 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import anthropic
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 from persistence import snapshot_graph
 from hypothesis_graph import (
-    FailureCategory,
+    EvidenceInput,
+    GraphUpdate,
     HypothesisGraph,
     HypothesisStatus,
-    Hypothesis,
-    Severity,
+    update_graph,
 )
+from output_validator import validate_graph_update
 from tools import TOOL_DEFINITIONS, dispatch_tool
 
 # ── System prompt ─────────────────────────────────────────────────────────────
@@ -28,73 +33,69 @@ from tools import TOOL_DEFINITIONS, dispatch_tool
 _SYSTEM_PROMPT = """\
 You are an expert ML systems reliability engineer investigating a degraded ML system.
 
-Your job: identify the root cause by querying available tools, then call
-stop_investigation with your ranked diagnosis.
+Your job: identify the root cause by querying available tools, maintaining a structured
+hypothesis graph as you go, then call stop_investigation with your final diagnosis.
 
-## Approach
-1. Use query_metrics first to quantify the degradation and rule out infra issues.
-2. Use query_logs on the service(s) most consistent with what you find in metrics.
-3. Call stop_investigation when one hypothesis is clearly dominant (confidence > 0.60)
-   or when tool calls remaining drops to 1.
+## Protocol (follow exactly)
+1. Call a query tool (query_metrics, query_logs).
+2. Immediately call update_hypothesis_graph to record what you learned.
+   Never call two query tools back-to-back without an update in between.
+   update_hypothesis_graph is FREE — it does not count against your tool budget.
+3. Repeat until one hypothesis is clearly dominant (likelihood > 0.60) or budget is low.
+4. Call stop_investigation to submit your diagnosis.
 
-## Failure categories you can diagnose
-- feature_drift: Input distributions shifted from the training distribution
-- bad_deployment: A recent code or model deployment caused a regression
-- label_pipeline_corruption: Ground-truth labels are corrupted, making model appear worse
-- training_serving_skew: Feature transforms differ between training and serving
+## update_hypothesis_graph — choose one action
+
+action="update" (most common): evidence tests an EXISTING hypothesis.
+  - current_focus: hypothesis ID this evidence most directly tests (e.g. "H1")
+
+action="create": evidence suggests a root cause NOT yet in the graph.
+  - new_hypothesis_description: what the new hypothesis claims
+  - new_hypothesis_severity: critical | high | medium | low
+  - new_hypothesis_initial_likelihood: starting weight, e.g. 0.10–0.20
+
+action="merge": your proposed new hypothesis is semantically equivalent
+to an existing one (e.g. "model staleness" ≡ "training-serving skew from
+delayed retraining"). Name the duplicate target instead of creating a copy.
+  - merge_into_id: the existing hypothesis ID to merge evidence into
+
+## Common fields (all actions)
+- new_evidence.tool_called: Exactly the tool you just called.
+- new_evidence.observation: Precise statement quoting key numbers from the result.
+- new_evidence.supports: true if the observation supports the focused hypothesis.
+- new_evidence.confidence_delta: Confidence shift for the focused hypothesis (typical ±0.05–0.25).
+- likelihood_changes: Adjust ALL relevant hypotheses. Will be normalized automatically.
+- hypotheses_to_rule_out: IDs you are now confident are NOT the root cause.
+- next_experiment_rationale: Why you're calling the next tool, or why you're stopping.
+
+## Hypothesis graph
+The graph starts empty — no pre-seeded categories, no prior assumptions.
+Your FIRST update_hypothesis_graph call MUST use action="create" to add your
+initial hypothesis based on what the first tool result tells you. Add competing
+hypotheses with additional action="create" calls as evidence suggests new
+mechanisms. Only use action="update" or action="merge" once the target
+hypothesis already exists in the graph.
 
 ## Tool budget
-Every call (including stop_investigation) counts. Be efficient — do not query
-the same service twice unless the first result was ambiguous.
+query_metrics, query_logs, and stop_investigation each cost 1 budget unit.
+update_hypothesis_graph is free. Do not query the same service twice unless the first
+result was ambiguous.
 """
 
 
 # ── Graph initialization ───────────────────────────────────────────────────────
 
-def build_initial_graph(alert: str, budget: int = 6) -> HypothesisGraph:
+def build_initial_graph(
+    alert: str,
+    budget: int = 8,
+    investigation_start: Optional[datetime] = None,
+) -> HypothesisGraph:
     return HypothesisGraph(
         alert_summary=alert,
-        investigation_start=datetime.now(timezone.utc),
+        investigation_start=investigation_start or datetime.now(timezone.utc),
         tool_call_budget=budget,
-        hypotheses=[
-            Hypothesis(
-                id="H1",
-                root_cause_category=FailureCategory.FEATURE_DRIFT,
-                description="Input feature distributions have shifted from the training distribution",
-                likelihood=0.30,
-                severity=Severity.HIGH,
-                status=HypothesisStatus.ACTIVE,
-            ),
-            Hypothesis(
-                id="H2",
-                root_cause_category=FailureCategory.BAD_DEPLOYMENT,
-                description="A recent model or code deployment introduced a regression",
-                likelihood=0.30,
-                severity=Severity.HIGH,
-                status=HypothesisStatus.ACTIVE,
-            ),
-            Hypothesis(
-                id="H3",
-                root_cause_category=FailureCategory.LABEL_PIPELINE_CORRUPTION,
-                description="The label pipeline is producing corrupted ground-truth labels",
-                likelihood=0.25,
-                severity=Severity.MEDIUM,
-                status=HypothesisStatus.ACTIVE,
-            ),
-            Hypothesis(
-                id="H4",
-                root_cause_category=FailureCategory.TRAINING_SERVING_SKEW,
-                description="Feature transformations differ between training and serving environments",
-                likelihood=0.15,
-                severity=Severity.MEDIUM,
-                status=HypothesisStatus.ACTIVE,
-            ),
-        ],
-        open_questions=[
-            "How large is the accuracy drop, and did prediction confidence also degrade?",
-            "Are there any recent deployments that could explain the timing?",
-            "Are there errors or anomalies in the feature pipeline or label pipeline?",
-        ],
+        hypotheses=[],
+        open_questions=[],
     )
 
 
@@ -103,16 +104,24 @@ def _graph_context(graph: HypothesisGraph) -> str:
     active = [h for h in graph.hypotheses if h.status == HypothesisStatus.ACTIVE]
     ruled_out = [h for h in graph.hypotheses if h.status == HypothesisStatus.RULED_OUT]
 
-    lines = [
+    header = [
         "## Current Hypothesis Graph",
         f"Alert: {graph.alert_summary}",
+        f"Investigation anchored to: {graph.investigation_start.strftime('%Y-%m-%dT%H:%M:%SZ')} — use this as 'now' for all tool query windows.",
         f"Tool calls used: {graph.tool_calls_used} / {graph.tool_call_budget}",
-        "",
-        "### Active Hypotheses",
     ]
+
+    if not graph.hypotheses:
+        return "\n".join(header + [
+            "",
+            'No hypotheses yet — your first update_hypothesis_graph call must use action="create".',
+        ])
+
+    lines = header + ["", "### Active Hypotheses"]
     for h in sorted(active, key=lambda x: -x.likelihood):
+        cat = h.root_cause_category.value if h.root_cause_category else "–"
         lines.append(
-            f"  [{h.id}] {h.root_cause_category.value}  "
+            f"  [{h.id}] {cat}  "
             f"likelihood={h.likelihood:.2f}  severity={h.severity.value}"
         )
         lines.append(f"       {h.description}")
@@ -123,7 +132,8 @@ def _graph_context(graph: HypothesisGraph) -> str:
     if ruled_out:
         lines += ["", "### Ruled Out"]
         for h in ruled_out:
-            lines.append(f"  [{h.id}] {h.root_cause_category.value}: {h.description}")
+            cat = h.root_cause_category.value if h.root_cause_category else "–"
+            lines.append(f"  [{h.id}] {cat}: {h.description}")
 
     if graph.established_facts:
         lines += ["", "### Established Facts"]
@@ -148,11 +158,11 @@ def print_top_hypothesis(graph: HypothesisGraph) -> None:
     bar = "█" * round(top.likelihood * 20) + "░" * (20 - round(top.likelihood * 20))
     supporting = sum(1 for e in top.evidence if e.supports)
 
+    cat_label = top.root_cause_category.value.upper().replace("_", " ") if top.root_cause_category else "UNKNOWN"
     print(f"\n  {'─' * 60}")
     print(f"  MOST LIKELY ROOT CAUSE")
     print(f"  {'─' * 60}")
-    print(f"  {top.root_cause_category.value.upper().replace('_', ' ')}  "
-          f"[{bar}]  {top.likelihood:.0%}")
+    print(f"  {cat_label}  [{bar}]  {top.likelihood:.0%}")
     print(f"  Severity   : {top.severity.value}")
     print(f"  Hypothesis : {top.description}")
     if top.evidence:
@@ -182,7 +192,8 @@ class DiagnosisResult:
 
 def run_investigation(
     alert: str,
-    budget: int = 6,
+    budget: int = 8,
+    investigation_start: Optional[datetime] = None,
     verbose: bool = True,
 ) -> tuple[HypothesisGraph, Optional[DiagnosisResult]]:
     """
@@ -192,7 +203,7 @@ def run_investigation(
     before the model called stop_investigation.
     """
     client = anthropic.Anthropic()
-    graph = build_initial_graph(alert, budget=budget)
+    graph = build_initial_graph(alert, budget=budget, investigation_start=investigation_start)
     snapshot_graph(graph)
 
     messages = [
@@ -252,11 +263,73 @@ def run_investigation(
             if block.type != "tool_use":
                 continue
 
-            graph.tool_calls_used += 1
             name = block.name
             inputs = block.input
 
-            if name == "stop_investigation":
+            if name == "update_hypothesis_graph":
+                # Bookkeeping — free, does not count against budget.
+                try:
+                    raw_ev = EvidenceInput(
+                        tool_called=inputs["new_evidence"]["tool_called"],
+                        observation=inputs["new_evidence"]["observation"],
+                        supports=inputs["new_evidence"]["supports"],
+                        confidence_delta=inputs["new_evidence"]["confidence_delta"],
+                    )
+                    graph_update = GraphUpdate(
+                        action=inputs.get("action", "update"),
+                        current_focus=inputs.get("current_focus"),
+                        merge_into_id=inputs.get("merge_into_id"),
+                        new_hypothesis_description=inputs.get("new_hypothesis_description"),
+                        new_hypothesis_severity=inputs.get("new_hypothesis_severity"),
+                        new_hypothesis_initial_likelihood=inputs.get("new_hypothesis_initial_likelihood"),
+                        new_evidence=raw_ev,
+                        likelihood_changes=inputs.get("likelihood_changes", {}),
+                        hypotheses_to_rule_out=inputs.get("hypotheses_to_rule_out", []),
+                        new_established_facts=inputs.get("new_established_facts", []),
+                        next_experiment_rationale=inputs.get("next_experiment_rationale", ""),
+                    )
+                except Exception as exc:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps({"status": "error", "message": str(exc)}),
+                    })
+                    continue
+
+                validation = validate_graph_update(graph_update, graph)
+                if not validation.valid:
+                    if verbose:
+                        print(f"\n[Graph update REJECTED]\n{validation}")
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps({
+                            "status": "validation_error",
+                            "errors": validation.errors,
+                        }),
+                    })
+                else:
+                    update_graph(graph, graph_update)
+                    snapshot_graph(graph)
+                    if verbose:
+                        print_top_hypothesis(graph)
+                    active = sorted(
+                        [h for h in graph.hypotheses if h.status == HypothesisStatus.ACTIVE],
+                        key=lambda h: -h.likelihood,
+                    )
+                    likelihoods = ", ".join(f"{h.id}={h.likelihood:.0%}" for h in active)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps({
+                            "status": "ok",
+                            "active_likelihoods": likelihoods,
+                            "established_facts_count": len(graph.established_facts),
+                        }),
+                    })
+
+            elif name == "stop_investigation":
+                graph.tool_calls_used += 1
                 done = True
                 diagnosis = DiagnosisResult(
                     root_cause=inputs["root_cause_category"],
@@ -274,6 +347,22 @@ def run_investigation(
                     print(f"\n[stop_investigation]")
                     print(diagnosis)
             else:
+                if graph.tool_calls_used >= graph.tool_call_budget:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps({
+                            "status": "budget_exhausted",
+                            "message": (
+                                f"Tool call discarded — all {graph.tool_call_budget} budget "
+                                "units already consumed this iteration. Call stop_investigation now."
+                            ),
+                        }),
+                    })
+                    if verbose:
+                        print(f"\n[Budget cap] {name} discarded — budget consumed")
+                    continue
+                graph.tool_calls_used += 1
                 result = dispatch_tool(name, inputs)
                 result_json = json.dumps(result, indent=2)
                 tool_results.append({
@@ -306,7 +395,12 @@ if __name__ == "__main__":
         "Prediction confidence also degraded. No system errors visible on dashboard."
     )
 
-    final_graph, final_diagnosis = run_investigation(ALERT, budget=6, verbose=True)
+    final_graph, final_diagnosis = run_investigation(
+        ALERT,
+        budget=8,
+        investigation_start=datetime(2024, 1, 7, 12, 0, 0, tzinfo=timezone.utc),
+        verbose=True,
+    )
 
     print(f"\n{'═' * 60}")
     print("FINAL GRAPH STATE")

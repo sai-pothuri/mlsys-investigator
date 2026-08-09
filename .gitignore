@@ -18,6 +18,9 @@ env/
 ml-system/ml/model/
 ml-system/ml/data/
 
+# Secret files
+.env
+
 # Misc
 .DS_Store
 *.log
