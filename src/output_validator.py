@@ -4,18 +4,25 @@ Validates the model's structured output against the current graph state.
 Returns a ValidationResult; never raises. The caller decides whether to
 hard-fail the session or log and continue (eval signal either way).
 
-Checks performed (all from hypothesis-graph-spec.md open issues §7):
-  1. new_evidence.tool_called is a registered tool name
-  2. Every key in likelihood_changes is an existing hypothesis ID
-  3. Every ID in hypotheses_to_rule_out is an existing hypothesis ID
-  4. New hypothesis IDs don't collide with existing ones
-  5. New hypotheses arrive with empty evidence
+Checks performed (dispatched by action):
+  All actions:
+    1. new_evidence.tool_called is a registered tool name
+    2. Every key in likelihood_changes is an existing hypothesis ID
+    3. Every ID in hypotheses_to_rule_out is an existing hypothesis ID
+  action="update":
+    4. current_focus is provided and references an existing hypothesis
+  action="merge":
+    5. merge_into_id is provided and references an existing hypothesis
+  action="create":
+    6. new_hypothesis_description is non-empty
+    7. new_hypothesis_severity (if given) is a valid Severity value
+    8. new_hypothesis_initial_likelihood (if given) is in [0, 1]
 """
 
 from dataclasses import dataclass, field
 from typing import List
 
-from hypothesis_graph import GraphUpdate, HypothesisGraph, TOOL_TO_EVIDENCE_TYPE
+from hypothesis_graph import GraphUpdate, HypothesisGraph, Severity, TOOL_TO_EVIDENCE_TYPE
 
 
 @dataclass
@@ -33,22 +40,46 @@ def validate_graph_update(update: GraphUpdate, graph: HypothesisGraph) -> Valida
     errors: List[str] = []
     existing_ids = {h.id for h in graph.hypotheses}
 
-    # 0. current_focus must be set and point to a real hypothesis
-    if graph.current_focus is None:
-        errors.append("graph.current_focus is None — must be set to a hypothesis ID before calling update")
-    elif graph.current_focus not in existing_ids:
-        errors.append(
-            f"graph.current_focus {graph.current_focus!r} does not match any hypothesis ID in the graph"
-        )
+    # Action-specific checks
+    if update.action == "update":
+        if not update.current_focus:
+            errors.append("action='update' requires current_focus to be set")
+        elif update.current_focus not in existing_ids:
+            errors.append(
+                f"current_focus {update.current_focus!r} does not match any hypothesis ID in the graph"
+            )
 
-    # 1. tool_called must be registered
+    elif update.action == "merge":
+        if not update.merge_into_id:
+            errors.append("action='merge' requires merge_into_id to be set")
+        elif update.merge_into_id not in existing_ids:
+            errors.append(
+                f"merge_into_id {update.merge_into_id!r} does not match any hypothesis ID in the graph"
+            )
+
+    elif update.action == "create":
+        if not update.new_hypothesis_description:
+            errors.append("action='create' requires new_hypothesis_description to be non-empty")
+        valid_severities = {s.value for s in Severity}
+        if update.new_hypothesis_severity and update.new_hypothesis_severity not in valid_severities:
+            errors.append(
+                f"new_hypothesis_severity {update.new_hypothesis_severity!r} is not valid; "
+                f"must be one of {sorted(valid_severities)}"
+            )
+        if update.new_hypothesis_initial_likelihood is not None:
+            if not (0.0 <= update.new_hypothesis_initial_likelihood <= 1.0):
+                errors.append(
+                    f"new_hypothesis_initial_likelihood must be in [0, 1]; "
+                    f"got {update.new_hypothesis_initial_likelihood}"
+                )
+
+    # Common checks (all actions)
     if update.new_evidence.tool_called not in TOOL_TO_EVIDENCE_TYPE:
         errors.append(
             f"new_evidence.tool_called {update.new_evidence.tool_called!r} "
             f"is not a registered tool name"
         )
 
-    # 2. likelihood_changes keys must reference existing hypotheses
     for h_id in update.likelihood_changes:
         if h_id not in existing_ids:
             errors.append(
@@ -56,23 +87,10 @@ def validate_graph_update(update: GraphUpdate, graph: HypothesisGraph) -> Valida
                 f"(hallucinated ID)"
             )
 
-    # 3. hypotheses_to_rule_out must reference existing hypotheses
     for h_id in update.hypotheses_to_rule_out:
         if h_id not in existing_ids:
             errors.append(
                 f"hypotheses_to_rule_out references unknown hypothesis ID {h_id!r}"
-            )
-
-    # 4 & 5. new_hypotheses: no ID collision, no pre-populated evidence
-    for h in update.new_hypotheses:
-        if h.id in existing_ids:
-            errors.append(
-                f"new_hypotheses contains ID {h.id!r} that already exists in the graph"
-            )
-        if h.evidence:
-            errors.append(
-                f"new_hypothesis {h.id!r} must be created with empty evidence "
-                f"(got {len(h.evidence)} evidence item(s))"
             )
 
     return ValidationResult(valid=len(errors) == 0, errors=errors)

@@ -7,7 +7,7 @@ likelihoods normalized programmatically, per-update delta capped at ±0.25.
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,11 +16,25 @@ from pydantic import BaseModel, Field
 
 class FailureCategory(str, Enum):
     # Derived from chaos injection taxonomy (single source of truth).
-    # TODO: expand to full 15-20 category taxonomy before building eval harness.
-    FEATURE_DRIFT = "feature_drift"
-    BAD_DEPLOYMENT = "bad_deployment"
-    LABEL_PIPELINE_CORRUPTION = "label_pipeline_corruption"
-    TRAINING_SERVING_SKEW = "training_serving_skew"
+    # Sync enforced by tests/test_taxonomy_sync.py.
+    FEATURE_DRIFT                     = "feature_drift"
+    BAD_DEPLOYMENT                    = "bad_deployment"
+    UPSTREAM_SCHEMA_CHANGE            = "upstream_schema_change"
+    INFRASTRUCTURE_LATENCY_SPIKE      = "infrastructure_latency_spike"
+    MODEL_VERSION_ROLLBACK_REGRESSION = "model_version_rollback_regression"
+    LABEL_PIPELINE_CORRUPTION         = "label_pipeline_corruption"
+    TRAINING_SERVING_SKEW             = "training_serving_skew"
+    DATA_FRESHNESS_DEGRADATION        = "data_freshness_degradation"
+    FEATURE_ENCODING_BUG              = "feature_encoding_bug"
+    GRADUAL_CONCEPT_DRIFT             = "gradual_concept_drift"
+    MODEL_CALIBRATION_DRIFT           = "model_calibration_drift"
+    SHADOW_MODE_LEAK                  = "shadow_mode_leak"
+    FEATURE_PIPELINE_PARTIAL_FAILURE  = "feature_pipeline_partial_failure"
+    DELAYED_LABEL_FEEDBACK_SHIFT      = "delayed_label_feedback_shift"
+    CASCADING_UPSTREAM_FAILURE        = "cascading_upstream_failure"
+    MODEL_STALENESS                   = "model_staleness"
+    FEATURE_IMPORTANCE_INVERSION      = "feature_importance_inversion"
+    COMPOUND_DRIFT_PLUS_DEPLOYMENT    = "compound_drift_plus_deployment"
 
 
 class HypothesisStatus(str, Enum):
@@ -99,7 +113,7 @@ class Experiment(BaseModel):
 
 class Hypothesis(BaseModel):
     id: str
-    root_cause_category: FailureCategory
+    root_cause_category: Optional[FailureCategory] = None
     description: str
     likelihood: float = Field(ge=0.0, le=1.0)
     severity: Severity
@@ -125,11 +139,27 @@ class HypothesisGraph(BaseModel):
 # ── GraphUpdate (delta applied programmatically, not full-rewrite) ────────────
 
 class GraphUpdate(BaseModel):
-    """Structured delta the model emits after each tool call."""
+    """Structured delta the model emits after each tool call.
+
+    The `action` field determines which mutation is performed:
+    - "update": attach evidence to an existing hypothesis (`current_focus` required)
+    - "create": add a new hypothesis and attach the triggering evidence to it
+    - "merge": the proposed new hypothesis is semantically equivalent to an existing
+               one — attach evidence to `merge_into_id` instead of creating a duplicate
+    """
+    action: Literal["create", "update", "merge"]
+    # "update" action
+    current_focus: Optional[str] = None
+    # "merge" action
+    merge_into_id: Optional[str] = None
+    # "create" action — no FailureCategory; categories are an eval-side concern
+    new_hypothesis_description: Optional[str] = None
+    new_hypothesis_severity: Optional[str] = None   # plain str avoids type coupling
+    new_hypothesis_initial_likelihood: Optional[float] = None
+    # Common fields (all actions)
     new_evidence: EvidenceInput
     likelihood_changes: Dict[str, float]
     hypotheses_to_rule_out: List[str] = []
-    new_hypotheses: List[Hypothesis] = []
     new_established_facts: List[str] = []
     next_experiment_rationale: str
 
@@ -137,17 +167,43 @@ class GraphUpdate(BaseModel):
 _MAX_LIKELIHOOD_DELTA = 0.25  # cap per spec §5.3
 
 
+def _next_hypothesis_id(graph: HypothesisGraph) -> str:
+    return f"H{len(graph.hypotheses) + 1}"
+
+
 def update_graph(graph: HypothesisGraph, update: GraphUpdate) -> HypothesisGraph:
     """Apply a GraphUpdate delta in-place. Returns the mutated graph."""
-    # Attach evidence to current_focus hypothesis (evidence always belongs to one hypothesis).
-    if graph.current_focus is None:
-        raise ValueError("update_graph called with current_focus=None; set graph.current_focus before updating")
     existing_ids = {h.id for h in graph.hypotheses}
-    if graph.current_focus not in existing_ids:
-        raise ValueError(f"current_focus {graph.current_focus!r} does not match any hypothesis ID in the graph")
+
+    if update.action == "create":
+        new_id = _next_hypothesis_id(graph)
+        severity = Severity(update.new_hypothesis_severity or "medium")
+        new_hyp = Hypothesis(
+            id=new_id,
+            description=update.new_hypothesis_description or "",
+            likelihood=max(0.0, min(1.0, update.new_hypothesis_initial_likelihood or 0.15)),
+            severity=severity,
+            status=HypothesisStatus.ACTIVE,
+        )
+        graph.hypotheses.append(new_hyp)
+        focus_id = new_id
+    elif update.action == "update":
+        if not update.current_focus or update.current_focus not in existing_ids:
+            raise ValueError(f"update action requires a valid current_focus; got {update.current_focus!r}")
+        focus_id = update.current_focus
+    elif update.action == "merge":
+        if not update.merge_into_id or update.merge_into_id not in existing_ids:
+            raise ValueError(f"merge action requires a valid merge_into_id; got {update.merge_into_id!r}")
+        focus_id = update.merge_into_id
+    else:
+        raise ValueError(f"Unknown action: {update.action!r}")
+
+    graph.current_focus = focus_id
+
+    # Attach evidence to the focused hypothesis.
     evidence = Evidence.from_input(update.new_evidence)
     for h in graph.hypotheses:
-        if h.id == graph.current_focus:
+        if h.id == focus_id:
             h.evidence.append(evidence)
             break
 
@@ -163,12 +219,6 @@ def update_graph(graph: HypothesisGraph, update: GraphUpdate) -> HypothesisGraph
         for h in graph.hypotheses:
             if h.id == h_id:
                 h.status = HypothesisStatus.RULED_OUT
-
-    # Insert surprising new hypotheses (evidence must be empty per spec §3.3).
-    for new_h in update.new_hypotheses:
-        if new_h.evidence:
-            raise ValueError(f"New hypothesis {new_h.id} must have empty evidence on creation")
-        graph.hypotheses.append(new_h)
 
     # Accumulate established facts.
     graph.established_facts.extend(update.new_established_facts)
