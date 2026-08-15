@@ -18,6 +18,12 @@ import subprocess
 import time
 from pathlib import Path
 
+from prompts import (
+    ALTERNATIVE_CATEGORIES_DESCRIPTION,
+    ROOT_CAUSE_CATEGORY_DESCRIPTION,
+    STOP_INVESTIGATION_DESCRIPTION,
+)
+
 # ── Anthropic API tool definitions ────────────────────────────────────────────
 
 TOOL_DEFINITIONS = [
@@ -324,16 +330,13 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "stop_investigation",
-        "description": (
-            "Terminate the investigation and submit the final diagnosis. "
-            "Call when one hypothesis is clearly dominant (likelihood > 0.60) "
-            "or when the tool budget is nearly exhausted."
-        ),
+        "description": STOP_INVESTIGATION_DESCRIPTION.content,
         "input_schema": {
             "type": "object",
             "properties": {
                 "root_cause_category": {
                     "type": "string",
+                    "description": ROOT_CAUSE_CATEGORY_DESCRIPTION.content,
                     "enum": [
                         "feature_drift",
                         "bad_deployment",
@@ -369,6 +372,34 @@ TOOL_DEFINITIONS = [
                     "type": "string",
                     "description": "Immediate remediation step",
                 },
+                "alternative_categories": {
+                    "type": "array",
+                    "description": ALTERNATIVE_CATEGORIES_DESCRIPTION.content,
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "feature_drift",
+                            "bad_deployment",
+                            "upstream_schema_change",
+                            "infrastructure_latency_spike",
+                            "model_version_rollback_regression",
+                            "label_pipeline_corruption",
+                            "training_serving_skew",
+                            "data_freshness_degradation",
+                            "feature_encoding_bug",
+                            "gradual_concept_drift",
+                            "model_calibration_drift",
+                            "shadow_mode_leak",
+                            "feature_pipeline_partial_failure",
+                            "delayed_label_feedback_shift",
+                            "cascading_upstream_failure",
+                            "model_staleness",
+                            "feature_importance_inversion",
+                            "compound_drift_plus_deployment",
+                        ],
+                    },
+                    "maxItems": 2,
+                },
             },
             "required": [
                 "root_cause_category", "diagnosis",
@@ -379,211 +410,202 @@ TOOL_DEFINITIONS = [
 ]
 
 
-# ── Hardcoded implementations ──────────────────────────────────────────────────
-#
-# Scenario: ML model accuracy dropped 15 pp over 6 hours.
-# Ground truth: feature_pipeline started silently corrupting feature_age_days
-# due to an upstream schema change, causing significant input distribution shift.
+# ── Shared helpers ────────────────────────────────────────────────────────────
+
+def _parse_ts(s: str) -> float:
+    from datetime import datetime, timezone
+    return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+
+
+def _aggregate_vals(vals: list, aggregation: str) -> float:
+    if not vals:
+        return 0.0
+    if aggregation == "mean":
+        return sum(vals) / len(vals)
+    sorted_vals = sorted(vals)
+    n = len(sorted_vals)
+    pct_map = {"p50": 0.50, "p95": 0.95, "p99": 0.99}
+    if aggregation in pct_map:
+        idx = min(int(n * pct_map[aggregation]), n - 1)
+        return sorted_vals[idx]
+    if aggregation == "min":
+        return sorted_vals[0]
+    if aggregation == "max":
+        return sorted_vals[-1]
+    return sum(vals) / len(vals)
+
+
+# ── Real SQLite-backed tool implementations ────────────────────────────────────
 
 def _query_metrics(inputs: dict) -> dict:
-    requested = set(inputs.get("metric_names", []))
-    has_comparison = bool(inputs.get("comparison_window"))
+    requested = list(inputs.get("metric_names", []))
+    tr = inputs.get("time_range", {})
+    cw_input = inputs.get("comparison_window")
+    aggregation = inputs.get("aggregation", "mean")
 
-    series = []
+    try:
+        t_start = _parse_ts(tr["start"])
+        t_end   = _parse_ts(tr["end"])
+    except Exception as exc:
+        return {
+            "tool_name": "query_metrics",
+            "status": "error",
+            "error": {"error_type": "invalid_parameter", "message": str(exc), "retryable": False},
+            "query_metadata": {"latency_ms": 0},
+        }
+
+    db_path = _data_dir() / "metrics.db"
+    if not db_path.exists():
+        return {
+            "tool_name": "query_metrics",
+            "status": "error",
+            "error": {"error_type": "service_unavailable",
+                      "message": "metrics.db not found — run the data generator first",
+                      "retryable": False},
+            "query_metadata": {"latency_ms": 0},
+        }
+
+    t0 = time.monotonic()
+
+    def _fetch_window(start: float, end: float, window_label: str) -> list:
+        placeholders = ",".join("?" * len(requested))
+        con = sqlite3.connect(str(db_path))
+        rows = con.execute(
+            f"SELECT metric_name, metric_value FROM metrics "
+            f"WHERE timestamp >= ? AND timestamp < ? AND metric_name IN ({placeholders}) "
+            f"ORDER BY timestamp",
+            [start, end, *requested],
+        ).fetchall()
+        con.close()
+        by_metric: dict = {}
+        for metric_name, metric_value in rows:
+            by_metric.setdefault(metric_name, []).append(metric_value)
+        result = []
+        for metric in requested:
+            vals = by_metric.get(metric, [])
+            result.append({
+                "metric_name":      metric,
+                "window":           window_label,
+                "aggregated_value": round(_aggregate_vals(vals, aggregation), 6),
+                "sample_count":     len(vals),
+            })
+        return result
+
+    series = _fetch_window(t_start, t_end, "primary")
     delta: dict = {}
 
-    # Accuracy: degraded in primary window vs comparison
-    if "accuracy" in requested:
-        series.append({
-            "metric_name": "accuracy",
-            "window": "primary",
-            "aggregated_value": 0.76,
-            "sample_count": 1440,
-        })
-        if has_comparison:
-            series.append({
-                "metric_name": "accuracy",
-                "window": "comparison",
-                "aggregated_value": 0.91,
-                "sample_count": 1440,
-            })
-            delta["accuracy"] = -0.15
+    if cw_input:
+        try:
+            c_start = _parse_ts(cw_input["start"])
+            c_end   = _parse_ts(cw_input["end"])
+        except Exception as exc:
+            return {
+                "tool_name": "query_metrics",
+                "status": "error",
+                "error": {"error_type": "invalid_parameter", "message": str(exc), "retryable": False},
+                "query_metadata": {"latency_ms": 0},
+            }
+        comp_series = _fetch_window(c_start, c_end, "comparison")
+        primary_vals = {s["metric_name"]: s["aggregated_value"] for s in series}
+        comp_vals    = {s["metric_name"]: s["aggregated_value"] for s in comp_series}
+        for metric in primary_vals:
+            if metric in comp_vals:
+                delta[metric] = round(primary_vals[metric] - comp_vals[metric], 4)
+        series = series + comp_series
 
-    # Prediction confidence: also degraded (model uncertain about its own outputs)
-    if "prediction_confidence" in requested:
-        series.append({
-            "metric_name": "prediction_confidence",
-            "window": "primary",
-            "aggregated_value": 0.61,
-            "sample_count": 1440,
-        })
-        if has_comparison:
-            series.append({
-                "metric_name": "prediction_confidence",
-                "window": "comparison",
-                "aggregated_value": 0.84,
-                "sample_count": 1440,
-            })
-            delta["prediction_confidence"] = -0.23
-
-    # Latency: essentially unchanged (rules out infra degradation)
-    if "latency_p99" in requested:
-        series.append({
-            "metric_name": "latency_p99",
-            "window": "primary",
-            "aggregated_value": 143.0,
-            "sample_count": 1440,
-        })
-        if has_comparison:
-            series.append({
-                "metric_name": "latency_p99",
-                "window": "comparison",
-                "aggregated_value": 139.0,
-                "sample_count": 1440,
-            })
-            delta["latency_p99"] = 4.0
-
-    # Error rate: flat (rules out hard failures / bad deployment causing crashes)
-    if "error_rate" in requested:
-        series.append({
-            "metric_name": "error_rate",
-            "window": "primary",
-            "aggregated_value": 0.002,
-            "sample_count": 1440,
-        })
-        if has_comparison:
-            series.append({
-                "metric_name": "error_rate",
-                "window": "comparison",
-                "aggregated_value": 0.002,
-                "sample_count": 1440,
-            })
-            delta["error_rate"] = 0.0
-
-    if "throughput" in requested:
-        series.append({
-            "metric_name": "throughput",
-            "window": "primary",
-            "aggregated_value": 481.0,
-            "sample_count": 1440,
-        })
-        if has_comparison:
-            series.append({
-                "metric_name": "throughput",
-                "window": "comparison",
-                "aggregated_value": 478.0,
-                "sample_count": 1440,
-            })
-            delta["throughput"] = 3.0
-
+    latency_ms = int((time.monotonic() - t0) * 1000)
     data: dict = {"series": series}
-    if has_comparison and delta:
+    if delta:
         data["delta"] = delta
 
     return {
         "tool_name": "query_metrics",
         "status": "ok",
         "data": data,
-        "query_metadata": {"latency_ms": 23, "result_count": len(series)},
+        "query_metadata": {"latency_ms": latency_ms, "result_count": len(series)},
     }
 
 
 def _query_logs(inputs: dict) -> dict:
-    service = inputs.get("service", "")
-    severity_filter = set(inputs.get("severity") or ["error", "warning", "info"])
+    service    = inputs.get("service", "")
+    tr         = inputs.get("time_range", {})
+    # DB stores severity as uppercase; tool input uses lowercase
+    severity_filter = [s.upper() for s in (inputs.get("severity") or ["error", "warning", "info"])]
+    filter_text = inputs.get("filter")
+    max_results = min(int(inputs.get("max_results") or 50), 200)
 
-    if service == "feature_pipeline":
-        all_entries = [
-            {
-                "timestamp": "2026-06-25T08:12:03Z",
-                "service": "feature_pipeline",
-                "severity": "warning",
-                "message": (
-                    "feature_age_days: unexpected spike to 847.3 "
-                    "(expected range 0–365); 156 rows affected"
-                ),
-            },
-            {
-                "timestamp": "2026-06-25T08:14:17Z",
-                "service": "feature_pipeline",
-                "severity": "warning",
-                "message": (
-                    "feature_transaction_count_30d: null values in 23.1% of rows "
-                    "(threshold: 1%); filling with column mean"
-                ),
-            },
-            {
-                "timestamp": "2026-06-25T08:15:01Z",
-                "service": "feature_pipeline",
-                "severity": "error",
-                "message": (
-                    "Schema validation FAILED: column 'feature_age_days' has 12 values "
-                    "outside expected range [0, 365]; job continued with suppressed errors"
-                ),
-            },
-            {
-                "timestamp": "2026-06-25T08:22:44Z",
-                "service": "feature_pipeline",
-                "severity": "error",
-                "message": (
-                    "Upstream source 'customer_events' missing column 'event_date'; "
-                    "falling back to row insertion_timestamp — this affects feature_age_days"
-                ),
-            },
-            {
-                "timestamp": "2026-06-25T08:30:00Z",
-                "service": "feature_pipeline",
-                "severity": "info",
-                "message": (
-                    "Batch job completed: 14,203 records processed, "
-                    "168 validation failures suppressed and filled with defaults"
-                ),
-            },
-        ]
+    try:
+        t_start = _parse_ts(tr["start"])
+        t_end   = _parse_ts(tr["end"])
+    except Exception as exc:
+        return {
+            "tool_name": "query_logs",
+            "status": "error",
+            "error": {"error_type": "invalid_parameter", "message": str(exc), "retryable": False},
+            "query_metadata": {"latency_ms": 0},
+        }
 
-    elif service == "inference_service":
-        all_entries = [
-            {
-                "timestamp": "2026-06-25T08:00:01Z",
-                "service": "inference_service",
-                "severity": "info",
-                "message": "Serving model v3.2.1 — no deployment events in past 48h",
-            },
-            {
-                "timestamp": "2026-06-25T09:05:12Z",
-                "service": "inference_service",
-                "severity": "info",
-                "message": "Prediction throughput nominal: 481 req/s (SLO: 300 req/s)",
-            },
-        ]
+    db_path = _data_dir() / "logs.db"
+    if not db_path.exists():
+        return {
+            "tool_name": "query_logs",
+            "status": "error",
+            "error": {"error_type": "service_unavailable",
+                      "message": "logs.db not found — run the data generator first",
+                      "retryable": False},
+            "query_metadata": {"latency_ms": 0},
+        }
 
-    elif service == "label_pipeline":
-        all_entries = [
-            {
-                "timestamp": "2026-06-25T07:00:00Z",
-                "service": "label_pipeline",
-                "severity": "info",
-                "message": "Daily label batch job completed successfully: 14,203 labels written",
-            },
-        ]
+    t0 = time.monotonic()
+    params: list = [t_start, t_end, service]
+    sql = (
+        "SELECT timestamp, service, severity, message "
+        "FROM logs WHERE timestamp >= ? AND timestamp < ? AND service = ?"
+    )
+    if severity_filter:
+        placeholders = ",".join("?" * len(severity_filter))
+        sql += f" AND severity IN ({placeholders})"
+        params.extend(severity_filter)
+    if filter_text:
+        sql += " AND message LIKE ?"
+        params.append(f"%{filter_text}%")
+    sql += " ORDER BY timestamp LIMIT ?"
+    params.append(max_results + 1)
 
-    else:
-        all_entries = []
+    con = sqlite3.connect(str(db_path))
+    rows = con.execute(sql, params).fetchall()
+    con.close()
+    latency_ms = int((time.monotonic() - t0) * 1000)
 
-    filtered = [e for e in all_entries if e["severity"] in severity_filter]
+    truncated = len(rows) > max_results
+    entries = []
+    from datetime import datetime, timezone
+    for ts, svc, sev, msg in rows[:max_results]:
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        entries.append({
+            "timestamp": dt.isoformat().replace("+00:00", "Z"),
+            "service":   svc,
+            "severity":  sev.lower(),
+            "message":   msg,
+        })
 
     return {
         "tool_name": "query_logs",
         "status": "ok",
-        "data": {"entries": filtered, "truncated": False},
-        "query_metadata": {"latency_ms": 18, "result_count": len(filtered)},
+        "data": {"entries": entries, "truncated": truncated},
+        "query_metadata": {"latency_ms": latency_ms, "result_count": len(entries)},
     }
 
 
 # ── Real backends ─────────────────────────────────────────────────────────────
 
-_DATA_DIR = Path(__file__).parent.parent / "target-system" / "data"
+_DATA_DIR_DEFAULT = Path(__file__).parent.parent / "target-system" / "data"
 _PIPELINE_REPO = Path(__file__).parent.parent / "target-system" / "pipeline_repo"
+
+
+def _data_dir() -> Path:
+    override = os.environ.get("MLSYS_DATA_DIR", "")
+    return Path(override) if override else _DATA_DIR_DEFAULT
 
 _KNOWN_FEATURES = [
     "account_age_days", "monthly_spend", "num_transactions_30d",
@@ -597,11 +619,8 @@ def _query_deployment_history(inputs: dict) -> dict:
     service = inputs.get("service", "")
     tr = inputs.get("time_range", {})
     try:
-        from datetime import datetime, timezone
-        def _ts(s: str) -> float:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
-        t_start = _ts(tr["start"])
-        t_end   = _ts(tr["end"])
+        t_start = _parse_ts(tr["start"])
+        t_end   = _parse_ts(tr["end"])
     except Exception as exc:
         return {
             "tool_name": "query_deployment_history",
@@ -610,7 +629,7 @@ def _query_deployment_history(inputs: dict) -> dict:
             "query_metadata": {"latency_ms": 0},
         }
 
-    db_path = _DATA_DIR / "deployments.db"
+    db_path = _data_dir() / "deployments.db"
     t0 = time.monotonic()
     con = sqlite3.connect(str(db_path))
     rows = con.execute(
@@ -626,12 +645,12 @@ def _query_deployment_history(inputs: dict) -> dict:
     con.close()
     latency_ms = int((time.monotonic() - t0) * 1000)
 
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone as _tz
     deployments = []
     for row in rows:
         deployments.append({
             "deploy_id":      row[0],
-            "timestamp":      datetime.fromtimestamp(row[1], tz=timezone.utc).isoformat(),
+            "timestamp":      datetime.fromtimestamp(row[1], tz=_tz.utc).isoformat(),
             "service":        row[2],
             "version_before": row[3],
             "version_after":  row[4],
@@ -697,11 +716,8 @@ def _query_feature_distributions(inputs: dict) -> dict:
         }
 
     try:
-        from datetime import datetime, timezone
-        def _ts(s: str) -> float:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
-        b_start, b_end = _ts(bw["start"]), _ts(bw["end"])
-        c_start, c_end = _ts(cw["start"]), _ts(cw["end"])
+        b_start, b_end = _parse_ts(bw["start"]), _parse_ts(bw["end"])
+        c_start, c_end = _parse_ts(cw["start"]), _parse_ts(cw["end"])
     except Exception as exc:
         return {
             "tool_name": "query_feature_distributions",
@@ -710,7 +726,7 @@ def _query_feature_distributions(inputs: dict) -> dict:
             "query_metadata": {"latency_ms": 0},
         }
 
-    db_path = _DATA_DIR / "feature_store.db"
+    db_path = _data_dir() / "feature_store.db"
     t0 = time.monotonic()
     con = sqlite3.connect(str(db_path))
 

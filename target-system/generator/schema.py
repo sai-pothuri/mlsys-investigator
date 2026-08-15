@@ -77,8 +77,16 @@ CREATE INDEX IF NOT EXISTS idx_deployments_ts ON deployments(timestamp);
 """
 
 
+_TABLE_NAMES = {
+    "feature_store": ["requests"],
+    "metrics":       ["metrics"],
+    "logs":          ["logs"],
+    "deployments":   ["deployments"],
+}
+
+
 def setup_databases(output_dir: str) -> dict[str, str]:
-    """Create all SQLite databases. Returns mapping of name → path."""
+    """Create (or recreate) all SQLite databases. Returns mapping of name → path."""
     base = Path(output_dir)
     base.mkdir(parents=True, exist_ok=True)
     paths = {
@@ -96,6 +104,8 @@ def setup_databases(output_dir: str) -> dict[str, str]:
     for name, path in paths.items():
         con = sqlite3.connect(path)
         con.executescript(ddls[name])
+        for table in _TABLE_NAMES[name]:
+            con.execute(f"DELETE FROM {table}")
         con.commit()
         con.close()
     return paths

@@ -24,3 +24,9 @@ ml-system/ml/data/
 # Misc
 .DS_Store
 *.log
+
+# Generated scenario data (recreated by run_eval.py)
+target-system/data/
+
+# Runtime agent state
+hypothesis_graph.json

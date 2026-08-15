@@ -7,15 +7,23 @@ Terminates when the model calls stop_investigation or the tool budget is exhaust
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import anthropic
 from dotenv import load_dotenv
+from langfuse import Langfuse
 
 load_dotenv(Path(__file__).parent.parent / ".env")
+
+_langfuse = Langfuse(
+    public_key=os.environ.get("LANGFUSE_PUBLIC_KEY", ""),
+    secret_key=os.environ.get("LANGFUSE_SECRET_KEY", ""),
+    host=os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+    tracing_enabled=bool(os.environ.get("LANGFUSE_PUBLIC_KEY")),
+)
 
 from persistence import snapshot_graph
 from hypothesis_graph import (
@@ -26,61 +34,14 @@ from hypothesis_graph import (
     update_graph,
 )
 from output_validator import validate_graph_update
+from stopping_criteria import should_stop, snapshot_likelihoods
+from prompts import (
+    BUDGET_EXHAUSTED_MESSAGE,
+    CONVERGENCE_MESSAGE,
+    INITIAL_USER_MESSAGE,
+    SYSTEM_PROMPT,
+)
 from tools import TOOL_DEFINITIONS, dispatch_tool
-
-# ── System prompt ─────────────────────────────────────────────────────────────
-
-_SYSTEM_PROMPT = """\
-You are an expert ML systems reliability engineer investigating a degraded ML system.
-
-Your job: identify the root cause by querying available tools, maintaining a structured
-hypothesis graph as you go, then call stop_investigation with your final diagnosis.
-
-## Protocol (follow exactly)
-1. Call a query tool (query_metrics, query_logs).
-2. Immediately call update_hypothesis_graph to record what you learned.
-   Never call two query tools back-to-back without an update in between.
-   update_hypothesis_graph is FREE — it does not count against your tool budget.
-3. Repeat until one hypothesis is clearly dominant (likelihood > 0.60) or budget is low.
-4. Call stop_investigation to submit your diagnosis.
-
-## update_hypothesis_graph — choose one action
-
-action="update" (most common): evidence tests an EXISTING hypothesis.
-  - current_focus: hypothesis ID this evidence most directly tests (e.g. "H1")
-
-action="create": evidence suggests a root cause NOT yet in the graph.
-  - new_hypothesis_description: what the new hypothesis claims
-  - new_hypothesis_severity: critical | high | medium | low
-  - new_hypothesis_initial_likelihood: starting weight, e.g. 0.10–0.20
-
-action="merge": your proposed new hypothesis is semantically equivalent
-to an existing one (e.g. "model staleness" ≡ "training-serving skew from
-delayed retraining"). Name the duplicate target instead of creating a copy.
-  - merge_into_id: the existing hypothesis ID to merge evidence into
-
-## Common fields (all actions)
-- new_evidence.tool_called: Exactly the tool you just called.
-- new_evidence.observation: Precise statement quoting key numbers from the result.
-- new_evidence.supports: true if the observation supports the focused hypothesis.
-- new_evidence.confidence_delta: Confidence shift for the focused hypothesis (typical ±0.05–0.25).
-- likelihood_changes: Adjust ALL relevant hypotheses. Will be normalized automatically.
-- hypotheses_to_rule_out: IDs you are now confident are NOT the root cause.
-- next_experiment_rationale: Why you're calling the next tool, or why you're stopping.
-
-## Hypothesis graph
-The graph starts empty — no pre-seeded categories, no prior assumptions.
-Your FIRST update_hypothesis_graph call MUST use action="create" to add your
-initial hypothesis based on what the first tool result tells you. Add competing
-hypotheses with additional action="create" calls as evidence suggests new
-mechanisms. Only use action="update" or action="merge" once the target
-hypothesis already exists in the graph.
-
-## Tool budget
-query_metrics, query_logs, and stop_investigation each cost 1 budget unit.
-update_hypothesis_graph is free. Do not query the same service twice unless the first
-result was ambiguous.
-"""
 
 
 # ── Graph initialization ───────────────────────────────────────────────────────
@@ -178,10 +139,13 @@ class DiagnosisResult:
     diagnosis: str
     confidence: float
     recommended_action: str
+    alternative_categories: list[str] = field(default_factory=list)
 
     def __str__(self) -> str:
+        alts = ", ".join(self.alternative_categories) if self.alternative_categories else "none"
         return (
             f"Root cause : {self.root_cause}\n"
+            f"Alternatives: {alts}\n"
             f"Confidence : {self.confidence:.0%}\n"
             f"Diagnosis  : {self.diagnosis}\n"
             f"Action     : {self.recommended_action}"
@@ -195,6 +159,7 @@ def run_investigation(
     budget: int = 8,
     investigation_start: Optional[datetime] = None,
     verbose: bool = True,
+    ground_truth: Optional[str] = None,
 ) -> tuple[HypothesisGraph, Optional[DiagnosisResult]]:
     """
     Run a ReAct investigation loop.
@@ -206,20 +171,33 @@ def run_investigation(
     graph = build_initial_graph(alert, budget=budget, investigation_start=investigation_start)
     snapshot_graph(graph)
 
+    trace = _langfuse.start_observation(
+        name="investigation",
+        as_type="span",
+        input={"alert": alert},
+        metadata={
+            "budget": budget,
+            **({"ground_truth": ground_truth} if ground_truth else {}),
+        },
+    )
+
     messages = [
         {
             "role": "user",
-            "content": (
-                f"{_graph_context(graph)}\n\n"
-                "Begin your investigation. Call tools to gather evidence, "
-                "then call stop_investigation with your final diagnosis."
+            "content": INITIAL_USER_MESSAGE.content.format(
+                graph_context=_graph_context(graph)
             ),
         }
     ]
 
     diagnosis: Optional[DiagnosisResult] = None
+    _likelihood_snapshots: list[dict[str, float]] = []
+    _turn = 0
 
     while graph.tool_calls_used < graph.tool_call_budget:
+        _turn += 1
+        turn_span = trace.start_observation(name=f"react_turn_{_turn}", as_type="span")
+
         remaining = graph.tool_call_budget - graph.tool_calls_used
         if verbose:
             print(f"\n{'─' * 60}")
@@ -228,7 +206,7 @@ def run_investigation(
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=4096,
-            system=_SYSTEM_PROMPT,
+            system=SYSTEM_PROMPT.content,
             tools=TOOL_DEFINITIONS,
             messages=messages,
         )
@@ -248,12 +226,16 @@ def run_investigation(
             if verbose:
                 print("\n[Loop] model stopped without calling stop_investigation")
             graph.termination_reason = "model_end_turn"
+            turn_span.update(metadata={"stop_reason": "end_turn"})
+            turn_span.end()
             break
 
         if response.stop_reason != "tool_use":
             if verbose:
                 print(f"\n[Loop] unexpected stop_reason: {response.stop_reason!r}")
             graph.termination_reason = f"unexpected:{response.stop_reason}"
+            turn_span.update(metadata={"stop_reason": response.stop_reason})
+            turn_span.end()
             break
 
         tool_results = []
@@ -311,6 +293,7 @@ def run_investigation(
                 else:
                     update_graph(graph, graph_update)
                     snapshot_graph(graph)
+                    _likelihood_snapshots.append(snapshot_likelihoods(graph))
                     if verbose:
                         print_top_hypothesis(graph)
                     active = sorted(
@@ -318,14 +301,36 @@ def run_investigation(
                         key=lambda h: -h.likelihood,
                     )
                     likelihoods = ", ".join(f"{h.id}={h.likelihood:.0%}" for h in active)
+                    turn_span.start_observation(
+                        name="update_hypothesis_graph",
+                        as_type="span",
+                        input={
+                            "action": graph_update.action,
+                            "likelihood_changes": graph_update.likelihood_changes,
+                        },
+                        output={"normalized_likelihoods": likelihoods},
+                    ).end()
+
+                    convergence = should_stop(graph, _likelihood_snapshots)
+                    if convergence.stop and verbose:
+                        print(f"\n[Convergence] {convergence.reason} — "
+                              f"top={convergence.top_hypothesis.likelihood:.0%}")
+
+                    payload: dict = {
+                        "status": "ok",
+                        "active_likelihoods": likelihoods,
+                        "established_facts_count": len(graph.established_facts),
+                    }
+                    if convergence.stop:
+                        payload["convergence_signal"] = convergence.reason
+                        payload["convergence_message"] = CONVERGENCE_MESSAGE.content.format(
+                            reason=convergence.reason
+                        )
+
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": json.dumps({
-                            "status": "ok",
-                            "active_likelihoods": likelihoods,
-                            "established_facts_count": len(graph.established_facts),
-                        }),
+                        "content": json.dumps(payload),
                     })
 
             elif name == "stop_investigation":
@@ -336,8 +341,15 @@ def run_investigation(
                     diagnosis=inputs["diagnosis"],
                     confidence=inputs["confidence"],
                     recommended_action=inputs["recommended_action"],
+                    alternative_categories=inputs.get("alternative_categories", []),
                 )
                 graph.termination_reason = "stop_investigation"
+                if ground_truth is not None:
+                    top1 = int(diagnosis.root_cause == ground_truth)
+                    top3_categories = [diagnosis.root_cause] + diagnosis.alternative_categories
+                    top3 = int(ground_truth in top3_categories)
+                    trace.score_trace(name="top1_correct", value=top1)
+                    trace.score_trace(name="top3_correct", value=top3)
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -353,9 +365,8 @@ def run_investigation(
                         "tool_use_id": block.id,
                         "content": json.dumps({
                             "status": "budget_exhausted",
-                            "message": (
-                                f"Tool call discarded — all {graph.tool_call_budget} budget "
-                                "units already consumed this iteration. Call stop_investigation now."
+                            "message": BUDGET_EXHAUSTED_MESSAGE.content.format(
+                                budget=graph.tool_call_budget
                             ),
                         }),
                     })
@@ -365,6 +376,12 @@ def run_investigation(
                 graph.tool_calls_used += 1
                 result = dispatch_tool(name, inputs)
                 result_json = json.dumps(result, indent=2)
+                turn_span.start_observation(
+                    name=name,
+                    as_type="tool",
+                    input=inputs,
+                    output=result,
+                ).end()
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -375,6 +392,8 @@ def run_investigation(
                     print(result_json)
 
         messages.append({"role": "user", "content": tool_results})
+        turn_span.update(metadata={"stop_reason": response.stop_reason, "done": done})
+        turn_span.end()
 
         if done:
             break
@@ -384,6 +403,16 @@ def run_investigation(
         if verbose:
             print("\n[Loop] tool budget exhausted — investigation terminated")
 
+    trace.update(
+        output={
+            "termination_reason": graph.termination_reason,
+            "tool_calls_used": graph.tool_calls_used,
+            **({"root_cause": diagnosis.root_cause, "confidence": diagnosis.confidence}
+               if diagnosis else {}),
+        }
+    )
+    trace.end()
+    _langfuse.flush()
     return graph, diagnosis
 
 
