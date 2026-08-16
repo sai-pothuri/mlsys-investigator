@@ -7,6 +7,7 @@ Terminates when the model calls stop_investigation or the tool budget is exhaust
 
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -152,6 +153,26 @@ class DiagnosisResult:
             f"Diagnosis  : {self.diagnosis}\n"
             f"Action     : {self.recommended_action}"
         )
+
+
+# ── Diagnosis helpers ─────────────────────────────────────────────────────────
+
+def _make_diagnosis(inputs: dict) -> DiagnosisResult:
+    return DiagnosisResult(
+        root_cause=inputs["root_cause_category"],
+        diagnosis=inputs["diagnosis"],
+        confidence=inputs["confidence"],
+        recommended_action=inputs["recommended_action"],
+        alternative_categories=inputs.get("alternative_categories", []),
+    )
+
+
+def _score_diagnosis(diagnosis: DiagnosisResult, ground_truth: str, trace) -> None:
+    top1 = int(diagnosis.root_cause == ground_truth)
+    top3_categories = [diagnosis.root_cause] + diagnosis.alternative_categories
+    top3 = int(ground_truth in top3_categories)
+    trace.score_trace(name="top1_correct", value=top1)
+    trace.score_trace(name="top3_correct", value=top3)
 
 
 # ── ReAct loop ────────────────────────────────────────────────────────────────
@@ -339,20 +360,10 @@ def run_investigation(
             elif name == "stop_investigation":
                 graph.tool_calls_used += 1
                 done = True
-                diagnosis = DiagnosisResult(
-                    root_cause=inputs["root_cause_category"],
-                    diagnosis=inputs["diagnosis"],
-                    confidence=inputs["confidence"],
-                    recommended_action=inputs["recommended_action"],
-                    alternative_categories=inputs.get("alternative_categories", []),
-                )
+                diagnosis = _make_diagnosis(inputs)
                 graph.termination_reason = "stop_investigation"
                 if ground_truth is not None:
-                    top1 = int(diagnosis.root_cause == ground_truth)
-                    top3_categories = [diagnosis.root_cause] + diagnosis.alternative_categories
-                    top3 = int(ground_truth in top3_categories)
-                    trace.score_trace(name="top1_correct", value=top1)
-                    trace.score_trace(name="top3_correct", value=top3)
+                    _score_diagnosis(diagnosis, ground_truth, trace)
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -435,29 +446,17 @@ def run_investigation(
                 for block in final_resp.content:
                     if getattr(block, "type", None) == "tool_use" and block.name == "stop_investigation":
                         inputs = block.input
-                        diagnosis = DiagnosisResult(
-                            root_cause=inputs["root_cause_category"],
-                            diagnosis=inputs["diagnosis"],
-                            confidence=inputs["confidence"],
-                            recommended_action=inputs["recommended_action"],
-                            alternative_categories=inputs.get("alternative_categories", []),
-                        )
+                        diagnosis = _make_diagnosis(inputs)
                         graph.termination_reason = "budget_exhausted_with_diagnosis"
                         if ground_truth is not None:
-                            top1 = int(diagnosis.root_cause == ground_truth)
-                            top3_categories = [diagnosis.root_cause] + diagnosis.alternative_categories
-                            top3 = int(ground_truth in top3_categories)
-                            trace.score_trace(name="top1_correct", value=top1)
-                            trace.score_trace(name="top3_correct", value=top3)
+                            _score_diagnosis(diagnosis, ground_truth, trace)
                         if verbose:
                             print(f"\n[stop_investigation — final synthesis]")
                             print(diagnosis)
                         break
                 else:
-                    import sys
                     print("[agent] final synthesis: model did not call stop_investigation", file=sys.stderr)
             except Exception as exc:
-                import sys
                 print(f"[agent] final synthesis error: {exc}", file=sys.stderr)
 
     trace.update(

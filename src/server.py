@@ -136,9 +136,9 @@ def _run_sync(alert: str, budget: int, investigation_start: Optional[datetime], 
 
 
 async def _launch_job(job_id: str, alert: str, budget: int, investigation_start: Optional[datetime], ground_truth: Optional[str]) -> None:
-    _jobs[job_id].status = JobStatus.running
     loop = asyncio.get_event_loop()
     try:
+        _jobs[job_id].status = JobStatus.running
         result = await loop.run_in_executor(
             _executor, _run_sync, alert, budget, investigation_start, ground_truth
         )
