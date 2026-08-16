@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlsys-investigator
+  namespace: mlsys-investigator
+  labels:
+    app: mlsys-investigator
+spec:
+  # Keep at 1 while job state is in-process.
+  # Scale to >1 only after adding Redis-backed job store or sticky routing.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlsys-investigator
+  template:
+    metadata:
+      labels:
+        app: mlsys-investigator
+    spec:
+      containers:
+        - name: investigator
+          # Replace with your registry/image after running:
+          #   docker build -t <registry>/mlsys-investigator:latest .
+          #   docker push <registry>/mlsys-investigator:latest
+          image: mlsys-investigator:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mlsys-secrets
+                  key: ANTHROPIC_API_KEY
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mlsys-secrets
+                  key: LANGFUSE_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mlsys-secrets
+                  key: LANGFUSE_SECRET_KEY
+            - name: LANGFUSE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: mlsys-config
+                  key: LANGFUSE_HOST
+            - name: WORKER_THREADS
+              valueFrom:
+                configMapKeyRef:
+                  name: mlsys-config
+                  key: WORKER_THREADS
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          # The hypothesis_graph.json snapshot and any tmp data land here.
+          # No PVC needed unless you want durable cross-restart snapshots.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      # Investigations call the Anthropic API — outbound internet is required.
+      # If your cluster uses egress policies, allow *.anthropic.com:443.

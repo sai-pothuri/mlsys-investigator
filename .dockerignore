@@ -1,0 +1,12 @@
+.git
+.env
+.pytest_cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+k8s/
+docs/
+memory/
+tests/
+*.md
+hypothesis_graph.json

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlsys-config
+  namespace: mlsys-investigator
+data:
+  LANGFUSE_HOST: "https://cloud.langfuse.com"
+  # Number of concurrent investigations per pod.
+  # Each investigation holds an Anthropic API connection for 30-120 s.
+  WORKER_THREADS: "4"

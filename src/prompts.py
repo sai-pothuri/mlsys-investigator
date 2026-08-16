@@ -71,9 +71,16 @@ mechanisms. Only use action="update" or action="merge" once the target
 hypothesis already exists in the graph.
 
 ## Tool budget
-query_metrics, query_logs, and stop_investigation each cost 1 budget unit.
-update_hypothesis_graph is free. Do not query the same service twice unless the first
-result was ambiguous.
+All 5 query tools cost 1 budget unit each:
+query_metrics, query_logs, query_deployment_history, query_feature_distributions, query_code_diffs.
+stop_investigation also costs 1 budget unit.
+update_hypothesis_graph is FREE — use it after every query tool without restriction.
+
+CRITICAL: reserve 1 unit for stop_investigation at all times.
+The update_hypothesis_graph response tells you exactly how many units are left
+in the field "tool_calls_remaining". When tool_calls_remaining = 1, call
+stop_investigation immediately — do not call another query tool.
+Do not query the same service twice unless the first result was ambiguous.
 """,
 )
 

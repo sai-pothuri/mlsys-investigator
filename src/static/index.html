@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MLSys Investigator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0b0f18;
+      --surface:    #111827;
+      --surface-hi: #16203a;
+      --surface-2:  #1b2540;
+      --border:     #1e2d44;
+      --border-hi:  #2a3d57;
+
+      --accent:     #f59e0b;
+      --accent-lo:  rgba(245,158,11,0.07);
+      --accent-mid: rgba(245,158,11,0.16);
+
+      --green:      #34d399;
+      --green-lo:   rgba(52,211,153,0.08);
+      --red:        #f87171;
+      --red-lo:     rgba(248,113,113,0.08);
+      --blue:       #818cf8;
+      --blue-lo:    rgba(129,140,248,0.08);
+
+      --muted:      #3a4e64;
+      --text:       #c8d3df;
+      --text-sub:   #8597aa;
+      --text-dim:   #4e6278;
+
+      --sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+      --r:    10px;
+      --r-sm: 6px;
+    }
+
+    html {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    body { max-width: 1020px; margin: 0 auto; padding: 36px 24px 80px; }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 44px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-icon {
+      flex-shrink: 0;
+      color: var(--accent);
+    }
+    .header-text h1 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .header-text .tagline {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      margin-top: 1px;
+    }
+    .header-status {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background .4s;
+    }
+    .status-dot.ok  { background: var(--green); }
+    .status-dot.err { background: var(--red); }
+
+    /* ── Sections ── */
+    section { margin-bottom: 32px; }
+    .section-label {
+      font-size: 0.63rem;
+      font-weight: 600;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    /* ── Config bar ── */
+    .config-bar { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field-label { font-size: 0.69rem; color: var(--text-sub); font-weight: 500; }
+    .field input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--r-sm);
+      padding: 7px 11px;
+      font-size: 0.8rem;
+      font-family: var(--mono);
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field input:focus {
+      border-color: var(--border-hi);
+      box-shadow: 0 0 0 3px rgba(245,158,11,0.06);
+    }
+    .field-url { flex: 1; min-width: 220px; }
+    .field-budget input { width: 80px; }
+
+    /* ── Preset grid ── */
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 9px;
+    }
+    .preset-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 13px 15px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      user-select: none;
+    }
+    .preset-card:hover { border-color: var(--border-hi); background: var(--surface-hi); }
+    .preset-card.selected { border-color: var(--accent); background: var(--accent-lo); }
+    .preset-tag {
+      font-size: 0.6rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      margin-bottom: 5px;
+    }
+    .preset-label {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+      line-height: 1.3;
+    }
+    .preset-alert {
+      font-size: 0.74rem;
+      color: var(--text-sub);
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* ── Alert textarea ── */
+    textarea#alert-input {
+      width: 100%;
+      min-height: 88px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--r);
+      padding: 12px 14px;
+      font-size: 0.85rem;
+      font-family: var(--sans);
+      resize: vertical;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+      line-height: 1.6;
+    }
+    textarea#alert-input:focus {
+      border-color: var(--border-hi);
+      box-shadow: 0 0 0 3px rgba(245,158,11,0.05);
+    }
+    textarea#alert-input::placeholder { color: var(--muted); }
+
+    .submit-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .submit-hint { font-size: 0.7rem; color: var(--text-dim); }
+    button#submit-btn {
+      background: var(--accent);
+      color: #0b0f18;
+      font-weight: 700;
+      font-size: 0.78rem;
+      font-family: var(--sans);
+      border: none;
+      border-radius: var(--r-sm);
+      padding: 8px 20px;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+      letter-spacing: 0.02em;
+    }
+    button#submit-btn:hover { opacity: 0.88; }
+    button#submit-btn:active { transform: scale(0.97); }
+    button#submit-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── Job list ── */
+    #investigations { display: flex; flex-direction: column; gap: 14px; }
+
+    /* ── Job card ── */
+    .job-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+    }
+    .job-card::before {
+      content: '';
+      display: block;
+      height: 2px;
+      background: var(--muted);
+      transition: background .25s;
+    }
+    .job-card.pending::before  { background: var(--muted); }
+    .job-card.running::before  { background: var(--blue); }
+    .job-card.completed::before { background: var(--green); }
+    .job-card.failed::before   { background: var(--red); }
+
+    .job-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .status-pill {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      border-radius: 999px;
+      padding: 2px 9px;
+      flex-shrink: 0;
+    }
+    .status-pill.pending  { background: rgba(58,78,100,.3); color: var(--text-sub); }
+    .status-pill.running  { background: var(--blue-lo); color: var(--blue); }
+    .status-pill.completed { background: var(--green-lo); color: var(--green); }
+    .status-pill.failed   { background: var(--red-lo); color: var(--red); }
+    .job-id { font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); }
+    .job-elapsed { margin-left: auto; font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); }
+
+    .spinner {
+      display: inline-block;
+      width: 11px; height: 11px;
+      border: 1.5px solid var(--blue);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .job-alert-summary {
+      padding: 9px 16px;
+      font-size: 0.77rem;
+      color: var(--text-sub);
+      font-style: italic;
+      border-bottom: 1px solid var(--border);
+      line-height: 1.5;
+    }
+
+    /* ── Diagnosis ── */
+    .diagnosis { padding: 16px 18px; }
+
+    .diag-stats {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0;
+      margin-bottom: 18px;
+    }
+    .diag-stat-chip { display: flex; align-items: center; gap: 6px; }
+    .chip-label {
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+    .chip-value {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--text-sub);
+    }
+    .chip-sep {
+      width: 1px;
+      height: 10px;
+      background: var(--border);
+      margin: 0 12px;
+    }
+
+    /* Root cause card */
+    .root-cause-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 18px 20px;
+      margin-bottom: 12px;
+    }
+    .rc-category {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+      line-height: 1.2;
+    }
+    .conf-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .conf-track {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .conf-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width .6s cubic-bezier(.4,0,.2,1);
+    }
+    .conf-pct {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--accent);
+      font-weight: 600;
+      min-width: 36px;
+      text-align: right;
+    }
+
+    .diag-field { margin-bottom: 16px; }
+    .diag-field:last-child { margin-bottom: 0; }
+    .field-heading {
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      font-weight: 600;
+      margin-bottom: 7px;
+    }
+
+    /* Action block */
+    .action-block {
+      display: flex;
+      gap: 11px;
+      background: rgba(245,158,11,0.04);
+      border: 1px solid rgba(245,158,11,0.13);
+      border-radius: var(--r);
+      padding: 13px 16px;
+      margin-bottom: 12px;
+    }
+    .action-arrow {
+      color: var(--accent);
+      font-size: 0.85rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      padding-top: 2px;
+    }
+
+    /* Also considered */
+    .alt-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .alt-pill {
+      font-size: 0.67rem;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text-sub);
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+
+    /* Facts */
+    .facts-ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-top: 4px;
+    }
+    .facts-ul li {
+      font-size: 0.8rem;
+      color: var(--text-sub);
+      padding-left: 14px;
+      position: relative;
+      line-height: 1.55;
+    }
+    .facts-ul li::before {
+      content: "·";
+      position: absolute;
+      left: 3px;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    /* Top suspect banner */
+    .top-suspect-card {
+      background: var(--blue-lo);
+      border: 1px solid rgba(129,140,248,0.18);
+      border-radius: var(--r);
+      padding: 16px 18px;
+      margin-bottom: 12px;
+    }
+    .ts-eyebrow {
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--blue);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .ts-category {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin-bottom: 12px;
+    }
+
+    /* Separator */
+    .diag-sep { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+
+    /* ── Prose (diagnosis & action text) ── */
+    .prose {
+      font-size: 0.875rem;
+      color: var(--text);
+      line-height: 1.75;
+    }
+    .prose p { margin-bottom: 0.55em; }
+    .prose p:last-child { margin-bottom: 0; }
+    .prose ul, .prose ol { padding-left: 1.3em; margin-bottom: 0.55em; }
+    .prose ul { list-style: disc; }
+    .prose ol { list-style: decimal; }
+    .prose li { margin-bottom: 0.28em; line-height: 1.65; }
+    .prose strong { font-weight: 600; color: var(--text); }
+    .prose em { font-style: italic; color: var(--text-sub); }
+    .prose code {
+      font-family: var(--mono);
+      font-size: 0.8em;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+    }
+    .prose .prose-heading {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin: 12px 0 5px;
+    }
+    .action-block .prose { color: var(--text-sub); }
+
+    /* Misc */
+    .job-waiting { padding: 20px 18px; color: var(--text-dim); font-size: 0.8rem; }
+    .error-msg { padding: 14px 18px; color: var(--red); font-family: var(--mono); font-size: 0.77rem; }
+    .empty-state {
+      text-align: center;
+      padding: 52px 0;
+      color: var(--text-dim);
+      font-size: 0.82rem;
+      line-height: 2;
+    }
+    .empty-state strong { display: block; font-size: 0.9rem; color: var(--text-sub); margin-bottom: 2px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-icon">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="28" height="28" rx="7" fill="rgba(245,158,11,0.12)"/>
+      <polyline points="4,20 9,11 13,15 18,7 24,12" stroke="#f59e0b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <circle cx="18" cy="7" r="1.5" fill="#f59e0b"/>
+    </svg>
+  </div>
+  <div class="header-text">
+    <h1>MLSys Investigator</h1>
+    <div class="tagline">ReAct agent · Anthropic API</div>
+  </div>
+  <div class="header-status" id="server-status">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">checking…</span>
+  </div>
+</header>
+
+<section>
+  <div class="section-label">Connection</div>
+  <div class="config-bar">
+    <div class="field field-url">
+      <div class="field-label">Server URL</div>
+      <input id="url-input" type="text" value="" spellcheck="false" placeholder="http://localhost:8080">
+    </div>
+    <div class="field field-budget">
+      <div class="field-label">Budget</div>
+      <input id="budget-input" type="number" value="8" min="1" max="20">
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">Preset Scenarios</div>
+  <div class="preset-grid" id="preset-grid"></div>
+</section>
+
+<section>
+  <div class="section-label">Alert Text</div>
+  <textarea id="alert-input" placeholder="ALERT: Model accuracy dropped from 0.91 to 0.76 over the past 6 hours …"></textarea>
+  <div class="submit-row">
+    <span class="submit-hint">⌘↵ to submit</span>
+    <button id="submit-btn">Investigate →</button>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">Investigations</div>
+  <div id="investigations">
+    <div class="empty-state">
+      <strong>No investigations yet</strong>
+      Select a preset scenario or paste an alert above.
+    </div>
+  </div>
+</section>
+
+<script>
+// ── Presets ───────────────────────────────────────────────────────────────────
+const PRESETS = [
+  {
+    id: "feature_drift",
+    tag: "feature_drift",
+    label: "Feature Drift — Upstream Schema Change",
+    alert:
+      "ALERT: Model accuracy dropped from 0.91 to 0.76 over the past 6 hours. " +
+      "Prediction confidence also degraded. No system errors visible on dashboard.",
+  },
+  {
+    id: "bad_deployment",
+    tag: "bad_deployment",
+    label: "Bad Deployment — Feature Normalizer Shape Mismatch",
+    alert:
+      "ALERT: Model accuracy dropped from 0.91 to 0.73 over the past 7 hours. " +
+      "Error rate has elevated significantly. A model deployment occurred earlier today.",
+  },
+  {
+    id: "label_corruption",
+    tag: "label_corruption",
+    label: "Label Pipeline Corruption — Join Key Misconfiguration",
+    alert:
+      "ALERT: Model accuracy dropped from 0.91 to 0.74 over the past 8 hours. " +
+      "No infrastructure errors reported. Engineers unsure if the model degraded " +
+      "or if something changed in the evaluation pipeline.",
+  },
+  {
+    id: "latency_spike",
+    tag: "latency_spike",
+    label: "Infrastructure Latency Spike",
+    alert:
+      "ALERT: Inference latency p99 spiked from 120ms to 890ms over the last 30 minutes. " +
+      "Throughput fell by 40%. Accuracy unchanged. No deployment in the last 24 hours.",
+  },
+  {
+    id: "silent_drift",
+    tag: "gradual_concept_drift",
+    label: "Gradual Concept Drift — No Sudden Event",
+    alert:
+      "ALERT: Model accuracy has drifted from 0.89 to 0.81 over the past 72 hours. " +
+      "The degradation is gradual with no single inflection point. " +
+      "No deployments, schema changes, or infra events detected.",
+  },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const jobs = {};
+let selectedPreset = null;
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const urlInput    = document.getElementById("url-input");
+const budgetInput = document.getElementById("budget-input");
+const alertInput  = document.getElementById("alert-input");
+const submitBtn   = document.getElementById("submit-btn");
+const presetGrid  = document.getElementById("preset-grid");
+const invList     = document.getElementById("investigations");
+
+urlInput.value = window.location.origin;
+
+// ── Server health check ───────────────────────────────────────────────────────
+async function checkServer() {
+  const base = urlInput.value.trim().replace(/\/$/, "");
+  const dot  = document.getElementById("status-dot");
+  const txt  = document.getElementById("status-text");
+  try {
+    const resp = await fetch(`${base}/health`, {
+      signal: AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined,
+    });
+    if (resp.ok) {
+      dot.className = "status-dot ok";
+      txt.textContent = "server connected";
+    } else {
+      throw new Error();
+    }
+  } catch {
+    dot.className = "status-dot err";
+    txt.textContent = "server unreachable";
+  }
+}
+checkServer();
+setInterval(checkServer, 30000);
+urlInput.addEventListener("change", checkServer);
+
+// ── Render presets ────────────────────────────────────────────────────────────
+function renderPresets() {
+  presetGrid.innerHTML = "";
+  PRESETS.forEach((p) => {
+    const card = document.createElement("div");
+    card.className = "preset-card" + (selectedPreset === p.id ? " selected" : "");
+    card.innerHTML = `
+      <div class="preset-tag">${p.tag}</div>
+      <div class="preset-label">${p.label}</div>
+      <div class="preset-alert">${p.alert}</div>
+    `;
+    card.addEventListener("click", () => selectPreset(p));
+    presetGrid.appendChild(card);
+  });
+}
+
+function selectPreset(p) {
+  selectedPreset = p.id;
+  alertInput.value = p.alert;
+  renderPresets();
+  alertInput.focus();
+}
+
+// ── Submit ────────────────────────────────────────────────────────────────────
+submitBtn.addEventListener("click", submitInvestigation);
+alertInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitInvestigation();
+});
+
+async function submitInvestigation() {
+  const alert = alertInput.value.trim();
+  if (!alert) { alertInput.focus(); return; }
+
+  const base   = urlInput.value.trim().replace(/\/$/, "");
+  const budget = parseInt(budgetInput.value, 10) || 8;
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Submitting…";
+
+  try {
+    const resp = await fetch(`${base}/investigate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alert, budget }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const { job_id } = await resp.json();
+    addJob(job_id, alert, base);
+  } catch (err) {
+    showTopError(`Could not reach ${base}/investigate — ${err.message}. Is the server running?`);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Investigate →";
+  }
+}
+
+// ── Job management ────────────────────────────────────────────────────────────
+function addJob(jobId, alert, base) {
+  const empty = invList.querySelector(".empty-state");
+  if (empty) empty.remove();
+
+  const startTime = Date.now();
+  const card = document.createElement("div");
+  card.className = "job-card pending";
+  card.id = `job-${jobId}`;
+  invList.prepend(card);
+  renderJobCard(card, { job_id: jobId, status: "pending", alert }, startTime);
+
+  const timerId = setInterval(async () => {
+    try {
+      const resp = await fetch(`${base}/jobs/${jobId}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const record = await resp.json();
+      renderJobCard(card, record, startTime);
+      if (record.status === "completed" || record.status === "failed") {
+        clearInterval(timerId);
+      }
+    } catch (err) {
+      clearInterval(timerId);
+      renderJobCard(card, { job_id: jobId, status: "failed", alert, error: err.message }, startTime);
+    }
+  }, 2000);
+
+  jobs[jobId] = { startTime, timerId };
+}
+
+function renderJobCard(card, record, startTime) {
+  const { job_id, status, alert, result, error } = record;
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+
+  card.className = `job-card ${status}`;
+
+  const spinnerHTML = status === "running" ? `<span class="spinner"></span>` : "";
+  const elapsedHTML = (status === "running" || status === "pending")
+    ? `<span class="job-elapsed">${elapsed}s</span>` : "";
+
+  let bodyHTML = "";
+  if (status === "completed" && result) {
+    bodyHTML = renderDiagnosis(result);
+  } else if (status === "failed") {
+    bodyHTML = `<div class="error-msg">Error: ${escHtml(error || "unknown")}</div>`;
+  } else {
+    bodyHTML = `<div class="job-waiting">
+      ${status === "pending" ? "Queued — waiting to start…" : "Investigation running…"}
+    </div>`;
+  }
+
+  card.innerHTML = `
+    <div class="job-header">
+      ${spinnerHTML}
+      <span class="status-pill ${status}">${status}</span>
+      <span class="job-id">${job_id.slice(0, 8)}</span>
+      ${elapsedHTML}
+    </div>
+    <div class="job-alert-summary">${escHtml(alert.slice(0, 160))}${alert.length > 160 ? "…" : ""}</div>
+    ${bodyHTML}
+  `;
+}
+
+// ── Diagnosis renderer ────────────────────────────────────────────────────────
+function renderDiagnosis(result) {
+  const diag  = result.diagnosis;
+  const top   = result.top_suspect;
+  const facts = result.established_facts || [];
+
+  const stats = [
+    { label: "Terminated", value: result.termination_reason },
+    { label: "Tool calls",  value: result.tool_calls_used },
+    { label: "Hypotheses",  value: result.hypothesis_count },
+  ].filter(s => s.value != null);
+
+  const statsHTML = `<div class="diag-stats">
+    ${stats.map((s, i) => `
+      ${i > 0 ? '<div class="chip-sep"></div>' : ""}
+      <div class="diag-stat-chip">
+        <span class="chip-label">${s.label}</span>
+        <span class="chip-value">${escHtml(String(s.value))}</span>
+      </div>`).join("")}
+  </div>`;
+
+  if (diag) {
+    const conf     = diag.confidence ?? 0;
+    const pct      = Math.round(conf * 100);
+    const width    = Math.min(100, pct);
+    const category = toTitleCase(diag.root_cause || "unknown");
+
+    const altsHTML = (diag.alternative_categories || []).length
+      ? `<div class="alt-row">
+           ${diag.alternative_categories.map(a =>
+             `<span class="alt-pill">${escHtml(toTitleCase(a))}</span>`
+           ).join("")}
+         </div>`
+      : "";
+
+    const factsHTML = facts.length
+      ? `<hr class="diag-sep">
+         <div class="field-heading" style="margin-bottom:8px">Established facts</div>
+         <ul class="facts-ul">${facts.map(f => `<li>${escHtml(f)}</li>`).join("")}</ul>`
+      : "";
+
+    return `<div class="diagnosis">
+      ${statsHTML}
+      <div class="root-cause-card">
+        <div class="rc-category">${escHtml(category)}</div>
+        <div class="conf-row">
+          <div class="conf-track"><div class="conf-fill" style="width:${width}%"></div></div>
+          <span class="conf-pct">${pct}%</span>
+        </div>
+        <div class="diag-field">
+          <div class="field-heading">Diagnosis</div>
+          <div class="prose">${formatText(diag.diagnosis || "")}</div>
+        </div>
+      </div>
+      <div class="action-block">
+        <span class="action-arrow">→</span>
+        <div class="prose">${formatText(diag.recommended_action || "")}</div>
+      </div>
+      ${altsHTML}
+      ${factsHTML}
+    </div>`;
+  }
+
+  if (top) {
+    const conf     = top.likelihood ?? 0;
+    const pct      = Math.round(conf * 100);
+    const width    = Math.min(100, pct);
+    const category = toTitleCase(top.category || "unknown");
+
+    const factsHTML = facts.length
+      ? `<hr class="diag-sep">
+         <div class="field-heading" style="margin-bottom:8px">Established facts</div>
+         <ul class="facts-ul">${facts.map(f => `<li>${escHtml(f)}</li>`).join("")}</ul>`
+      : "";
+
+    return `<div class="diagnosis">
+      ${statsHTML}
+      <div class="top-suspect-card">
+        <div class="ts-eyebrow">Top suspect · budget exhausted before final diagnosis</div>
+        <div class="ts-category">${escHtml(category)}</div>
+        <div class="conf-row">
+          <div class="conf-track">
+            <div class="conf-fill" style="width:${width}%; background:var(--blue)"></div>
+          </div>
+          <span class="conf-pct" style="color:var(--blue)">${pct}%</span>
+        </div>
+        <div class="diag-field" style="margin-bottom:0">
+          <div class="field-heading">Hypothesis</div>
+          <div class="prose">${formatText(top.description || "")}</div>
+        </div>
+      </div>
+      ${factsHTML}
+    </div>`;
+  }
+
+  return `<div class="diagnosis">
+    ${statsHTML}
+    <div style="color:var(--text-dim);font-size:0.82rem">No diagnosis or active hypotheses.</div>
+  </div>`;
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function toTitleCase(str) {
+  return (str || "")
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function formatText(rawText) {
+  if (!rawText) return "";
+
+  function inlineFmt(text) {
+    return text
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/_([^_\s][^_]*)_/g, "<em>$1</em>");
+  }
+
+  const lines = rawText.split(/\r?\n/);
+  let html = "", inUl = false, inOl = false, paraLines = [];
+
+  function flushPara() {
+    if (paraLines.length) { html += `<p>${paraLines.join(" ")}</p>`; paraLines = []; }
+  }
+  function closeUl() { if (inUl) { html += "</ul>"; inUl = false; } }
+  function closeOl() { if (inOl) { html += "</ol>"; inOl = false; } }
+
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) { flushPara(); closeUl(); closeOl(); continue; }
+
+    const ulM = t.match(/^[-*•]\s+([\s\S]*)/);
+    const olM = t.match(/^\d+[.)]\s+([\s\S]*)/);
+
+    if (ulM) {
+      flushPara(); closeOl();
+      if (!inUl) { html += "<ul>"; inUl = true; }
+      html += `<li>${inlineFmt(ulM[1])}</li>`;
+    } else if (olM) {
+      flushPara(); closeUl();
+      if (!inOl) { html += "<ol>"; inOl = true; }
+      html += `<li>${inlineFmt(olM[1])}</li>`;
+    } else {
+      closeUl(); closeOl();
+      if (t.endsWith(":") && t.length < 60 && !t.includes(".")) {
+        flushPara();
+        html += `<p class="prose-heading">${inlineFmt(t)}</p>`;
+      } else {
+        paraLines.push(inlineFmt(t));
+      }
+    }
+  }
+  flushPara(); closeUl(); closeOl();
+  return html;
+}
+
+function showTopError(msg) {
+  const el = document.createElement("div");
+  el.style.cssText = "background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);color:#f87171;border-radius:8px;padding:11px 14px;font-size:0.78rem;margin-bottom:14px;";
+  el.textContent = msg;
+  invList.prepend(el);
+  setTimeout(() => el.remove(), 8000);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+renderPresets();
+</script>
+</body>
+</html>

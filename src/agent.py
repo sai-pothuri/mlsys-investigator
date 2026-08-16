@@ -43,6 +43,8 @@ from prompts import (
 )
 from tools import TOOL_DEFINITIONS, dispatch_tool
 
+_SYSTEM_PROMPT = SYSTEM_PROMPT.content
+
 
 # ── Graph initialization ───────────────────────────────────────────────────────
 
@@ -320,6 +322,7 @@ def run_investigation(
                         "status": "ok",
                         "active_likelihoods": likelihoods,
                         "established_facts_count": len(graph.established_facts),
+                        "tool_calls_remaining": graph.tool_call_budget - graph.tool_calls_used,
                     }
                     if convergence.stop:
                         payload["convergence_signal"] = convergence.reason
@@ -401,7 +404,61 @@ def run_investigation(
     else:
         graph.termination_reason = "budget_exhausted"
         if verbose:
-            print("\n[Loop] tool budget exhausted — investigation terminated")
+            print("\n[Loop] tool budget exhausted — requesting final synthesis")
+
+        # The last turn's tool results are in messages but unprocessed.
+        # Give the model one final turn so it can call stop_investigation.
+        if messages and messages[-1]["role"] == "user":
+            content = messages[-1]["content"]
+            if isinstance(content, list):
+                content.append({
+                    "type": "text",
+                    "text": (
+                        f"Budget exhausted ({graph.tool_call_budget} tool calls consumed). "
+                        "Call stop_investigation NOW with your best diagnosis from the "
+                        "evidence gathered so far. No further query tools are available."
+                    ),
+                })
+            try:
+                final_resp = client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=2048,
+                    system=SYSTEM_PROMPT.content,
+                    tools=[t for t in TOOL_DEFINITIONS if t["name"] == "stop_investigation"],
+                    tool_choice={"type": "tool", "name": "stop_investigation"},
+                    messages=messages,
+                )
+                if verbose:
+                    for block in final_resp.content:
+                        if hasattr(block, "text") and block.text:
+                            print(f"\n[Final reasoning]\n{block.text}")
+                for block in final_resp.content:
+                    if getattr(block, "type", None) == "tool_use" and block.name == "stop_investigation":
+                        inputs = block.input
+                        diagnosis = DiagnosisResult(
+                            root_cause=inputs["root_cause_category"],
+                            diagnosis=inputs["diagnosis"],
+                            confidence=inputs["confidence"],
+                            recommended_action=inputs["recommended_action"],
+                            alternative_categories=inputs.get("alternative_categories", []),
+                        )
+                        graph.termination_reason = "budget_exhausted_with_diagnosis"
+                        if ground_truth is not None:
+                            top1 = int(diagnosis.root_cause == ground_truth)
+                            top3_categories = [diagnosis.root_cause] + diagnosis.alternative_categories
+                            top3 = int(ground_truth in top3_categories)
+                            trace.score_trace(name="top1_correct", value=top1)
+                            trace.score_trace(name="top3_correct", value=top3)
+                        if verbose:
+                            print(f"\n[stop_investigation — final synthesis]")
+                            print(diagnosis)
+                        break
+                else:
+                    import sys
+                    print("[agent] final synthesis: model did not call stop_investigation", file=sys.stderr)
+            except Exception as exc:
+                import sys
+                print(f"[agent] final synthesis error: {exc}", file=sys.stderr)
 
     trace.update(
         output={
