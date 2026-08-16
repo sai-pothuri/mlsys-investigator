@@ -181,7 +181,7 @@ def update_graph(graph: HypothesisGraph, update: GraphUpdate) -> HypothesisGraph
         new_hyp = Hypothesis(
             id=new_id,
             description=update.new_hypothesis_description or "",
-            likelihood=max(0.0, min(1.0, update.new_hypothesis_initial_likelihood or 0.15)),
+            likelihood=max(0.0, min(1.0, update.new_hypothesis_initial_likelihood if update.new_hypothesis_initial_likelihood is not None else 0.15)),
             severity=severity,
             status=HypothesisStatus.ACTIVE,
         )

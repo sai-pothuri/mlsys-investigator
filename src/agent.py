@@ -7,6 +7,7 @@ Terminates when the model calls stop_investigation or the tool budget is exhaust
 
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +43,8 @@ from prompts import (
     SYSTEM_PROMPT,
 )
 from tools import TOOL_DEFINITIONS, dispatch_tool
+
+_SYSTEM_PROMPT = SYSTEM_PROMPT.content
 
 
 # ── Graph initialization ───────────────────────────────────────────────────────
@@ -150,6 +153,26 @@ class DiagnosisResult:
             f"Diagnosis  : {self.diagnosis}\n"
             f"Action     : {self.recommended_action}"
         )
+
+
+# ── Diagnosis helpers ─────────────────────────────────────────────────────────
+
+def _make_diagnosis(inputs: dict) -> DiagnosisResult:
+    return DiagnosisResult(
+        root_cause=inputs["root_cause_category"],
+        diagnosis=inputs["diagnosis"],
+        confidence=inputs["confidence"],
+        recommended_action=inputs["recommended_action"],
+        alternative_categories=inputs.get("alternative_categories", []),
+    )
+
+
+def _score_diagnosis(diagnosis: DiagnosisResult, ground_truth: str, trace) -> None:
+    top1 = int(diagnosis.root_cause == ground_truth)
+    top3_categories = [diagnosis.root_cause] + diagnosis.alternative_categories
+    top3 = int(ground_truth in top3_categories)
+    trace.score_trace(name="top1_correct", value=top1)
+    trace.score_trace(name="top3_correct", value=top3)
 
 
 # ── ReAct loop ────────────────────────────────────────────────────────────────
@@ -320,6 +343,7 @@ def run_investigation(
                         "status": "ok",
                         "active_likelihoods": likelihoods,
                         "established_facts_count": len(graph.established_facts),
+                        "tool_calls_remaining": graph.tool_call_budget - graph.tool_calls_used,
                     }
                     if convergence.stop:
                         payload["convergence_signal"] = convergence.reason
@@ -336,20 +360,10 @@ def run_investigation(
             elif name == "stop_investigation":
                 graph.tool_calls_used += 1
                 done = True
-                diagnosis = DiagnosisResult(
-                    root_cause=inputs["root_cause_category"],
-                    diagnosis=inputs["diagnosis"],
-                    confidence=inputs["confidence"],
-                    recommended_action=inputs["recommended_action"],
-                    alternative_categories=inputs.get("alternative_categories", []),
-                )
+                diagnosis = _make_diagnosis(inputs)
                 graph.termination_reason = "stop_investigation"
                 if ground_truth is not None:
-                    top1 = int(diagnosis.root_cause == ground_truth)
-                    top3_categories = [diagnosis.root_cause] + diagnosis.alternative_categories
-                    top3 = int(ground_truth in top3_categories)
-                    trace.score_trace(name="top1_correct", value=top1)
-                    trace.score_trace(name="top3_correct", value=top3)
+                    _score_diagnosis(diagnosis, ground_truth, trace)
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -401,7 +415,49 @@ def run_investigation(
     else:
         graph.termination_reason = "budget_exhausted"
         if verbose:
-            print("\n[Loop] tool budget exhausted — investigation terminated")
+            print("\n[Loop] tool budget exhausted — requesting final synthesis")
+
+        # The last turn's tool results are in messages but unprocessed.
+        # Give the model one final turn so it can call stop_investigation.
+        if messages and messages[-1]["role"] == "user":
+            content = messages[-1]["content"]
+            if isinstance(content, list):
+                content.append({
+                    "type": "text",
+                    "text": (
+                        f"Budget exhausted ({graph.tool_call_budget} tool calls consumed). "
+                        "Call stop_investigation NOW with your best diagnosis from the "
+                        "evidence gathered so far. No further query tools are available."
+                    ),
+                })
+            try:
+                final_resp = client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=2048,
+                    system=SYSTEM_PROMPT.content,
+                    tools=[t for t in TOOL_DEFINITIONS if t["name"] == "stop_investigation"],
+                    tool_choice={"type": "tool", "name": "stop_investigation"},
+                    messages=messages,
+                )
+                if verbose:
+                    for block in final_resp.content:
+                        if hasattr(block, "text") and block.text:
+                            print(f"\n[Final reasoning]\n{block.text}")
+                for block in final_resp.content:
+                    if getattr(block, "type", None) == "tool_use" and block.name == "stop_investigation":
+                        inputs = block.input
+                        diagnosis = _make_diagnosis(inputs)
+                        graph.termination_reason = "budget_exhausted_with_diagnosis"
+                        if ground_truth is not None:
+                            _score_diagnosis(diagnosis, ground_truth, trace)
+                        if verbose:
+                            print(f"\n[stop_investigation — final synthesis]")
+                            print(diagnosis)
+                        break
+                else:
+                    print("[agent] final synthesis: model did not call stop_investigation", file=sys.stderr)
+            except Exception as exc:
+                print(f"[agent] final synthesis error: {exc}", file=sys.stderr)
 
     trace.update(
         output={
