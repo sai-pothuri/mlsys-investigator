@@ -17,12 +17,12 @@ import anthropic
 from dotenv import load_dotenv
 from langfuse import Langfuse
 
-load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 _langfuse = Langfuse(
     public_key=os.environ.get("LANGFUSE_PUBLIC_KEY", ""),
     secret_key=os.environ.get("LANGFUSE_SECRET_KEY", ""),
-    host=os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+    host=os.environ.get("LANGFUSE_HOST") or os.environ.get("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"),
     tracing_enabled=bool(os.environ.get("LANGFUSE_PUBLIC_KEY")),
 )
 
