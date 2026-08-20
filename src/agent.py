@@ -17,12 +17,12 @@ import anthropic
 from dotenv import load_dotenv
 from langfuse import Langfuse
 
-load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 _langfuse = Langfuse(
     public_key=os.environ.get("LANGFUSE_PUBLIC_KEY", ""),
     secret_key=os.environ.get("LANGFUSE_SECRET_KEY", ""),
-    host=os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+    host=os.environ.get("LANGFUSE_HOST") or os.environ.get("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"),
     tracing_enabled=bool(os.environ.get("LANGFUSE_PUBLIC_KEY")),
 )
 
@@ -43,9 +43,6 @@ from prompts import (
     SYSTEM_PROMPT,
 )
 from tools import TOOL_DEFINITIONS, dispatch_tool
-
-_SYSTEM_PROMPT = SYSTEM_PROMPT.content
-
 
 # ── Graph initialization ───────────────────────────────────────────────────────
 
@@ -220,194 +217,197 @@ def run_investigation(
     while graph.tool_calls_used < graph.tool_call_budget:
         _turn += 1
         turn_span = trace.start_observation(name=f"react_turn_{_turn}", as_type="span")
+        try:
+            remaining = graph.tool_call_budget - graph.tool_calls_used
+            if verbose:
+                print(f"\n{'─' * 60}")
+                print(f"[Loop] tool calls remaining: {remaining}")
 
-        remaining = graph.tool_call_budget - graph.tool_calls_used
-        if verbose:
-            print(f"\n{'─' * 60}")
-            print(f"[Loop] tool calls remaining: {remaining}")
+            response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=4096,
+                system=SYSTEM_PROMPT.content,
+                tools=TOOL_DEFINITIONS,
+                messages=messages,
+            )
 
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4096,
-            system=SYSTEM_PROMPT.content,
-            tools=TOOL_DEFINITIONS,
-            messages=messages,
-        )
+            assistant_content = response.content
+            messages.append({"role": "assistant", "content": assistant_content})
 
-        assistant_content = response.content
-        messages.append({"role": "assistant", "content": assistant_content})
+            if verbose:
+                for block in assistant_content:
+                    if hasattr(block, "text") and block.text:
+                        print(f"\n[Reasoning]\n{block.text}")
+                    elif block.type == "tool_use":
+                        print(f"\n[Tool call] {block.name}")
+                        print(json.dumps(block.input, indent=2))
 
-        if verbose:
+            if response.stop_reason == "end_turn":
+                if verbose:
+                    print("\n[Loop] model stopped without calling stop_investigation")
+                graph.termination_reason = "model_end_turn"
+                turn_span.update(metadata={"stop_reason": "end_turn"})
+                break
+
+            if response.stop_reason != "tool_use":
+                if verbose:
+                    print(f"\n[Loop] unexpected stop_reason: {response.stop_reason!r}")
+                graph.termination_reason = f"unexpected:{response.stop_reason}"
+                turn_span.update(metadata={"stop_reason": response.stop_reason})
+                break
+
+            tool_results = []
+            done = False
+
             for block in assistant_content:
-                if hasattr(block, "text") and block.text:
-                    print(f"\n[Reasoning]\n{block.text}")
-                elif block.type == "tool_use":
-                    print(f"\n[Tool call] {block.name}")
-                    print(json.dumps(block.input, indent=2))
-
-        if response.stop_reason == "end_turn":
-            if verbose:
-                print("\n[Loop] model stopped without calling stop_investigation")
-            graph.termination_reason = "model_end_turn"
-            turn_span.update(metadata={"stop_reason": "end_turn"})
-            turn_span.end()
-            break
-
-        if response.stop_reason != "tool_use":
-            if verbose:
-                print(f"\n[Loop] unexpected stop_reason: {response.stop_reason!r}")
-            graph.termination_reason = f"unexpected:{response.stop_reason}"
-            turn_span.update(metadata={"stop_reason": response.stop_reason})
-            turn_span.end()
-            break
-
-        tool_results = []
-        done = False
-
-        for block in assistant_content:
-            if block.type != "tool_use":
-                continue
-
-            name = block.name
-            inputs = block.input
-
-            if name == "update_hypothesis_graph":
-                # Bookkeeping — free, does not count against budget.
-                try:
-                    raw_ev = EvidenceInput(
-                        tool_called=inputs["new_evidence"]["tool_called"],
-                        observation=inputs["new_evidence"]["observation"],
-                        supports=inputs["new_evidence"]["supports"],
-                        confidence_delta=inputs["new_evidence"]["confidence_delta"],
-                    )
-                    graph_update = GraphUpdate(
-                        action=inputs.get("action", "update"),
-                        current_focus=inputs.get("current_focus"),
-                        merge_into_id=inputs.get("merge_into_id"),
-                        new_hypothesis_description=inputs.get("new_hypothesis_description"),
-                        new_hypothesis_severity=inputs.get("new_hypothesis_severity"),
-                        new_hypothesis_initial_likelihood=inputs.get("new_hypothesis_initial_likelihood"),
-                        new_evidence=raw_ev,
-                        likelihood_changes=inputs.get("likelihood_changes", {}),
-                        hypotheses_to_rule_out=inputs.get("hypotheses_to_rule_out", []),
-                        new_established_facts=inputs.get("new_established_facts", []),
-                        next_experiment_rationale=inputs.get("next_experiment_rationale", ""),
-                    )
-                except Exception as exc:
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": json.dumps({"status": "error", "message": str(exc)}),
-                    })
+                if block.type != "tool_use":
                     continue
 
-                validation = validate_graph_update(graph_update, graph)
-                if not validation.valid:
-                    if verbose:
-                        print(f"\n[Graph update REJECTED]\n{validation}")
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": json.dumps({
-                            "status": "validation_error",
-                            "errors": validation.errors,
-                        }),
-                    })
-                else:
-                    update_graph(graph, graph_update)
-                    snapshot_graph(graph)
-                    _likelihood_snapshots.append(snapshot_likelihoods(graph))
-                    if verbose:
-                        print_top_hypothesis(graph)
-                    active = sorted(
-                        [h for h in graph.hypotheses if h.status == HypothesisStatus.ACTIVE],
-                        key=lambda h: -h.likelihood,
-                    )
-                    likelihoods = ", ".join(f"{h.id}={h.likelihood:.0%}" for h in active)
-                    turn_span.start_observation(
-                        name="update_hypothesis_graph",
-                        as_type="span",
-                        input={
-                            "action": graph_update.action,
-                            "likelihood_changes": graph_update.likelihood_changes,
-                        },
-                        output={"normalized_likelihoods": likelihoods},
-                    ).end()
+                name = block.name
+                inputs = block.input
 
-                    convergence = should_stop(graph, _likelihood_snapshots)
-                    if convergence.stop and verbose:
-                        print(f"\n[Convergence] {convergence.reason} — "
-                              f"top={convergence.top_hypothesis.likelihood:.0%}")
+                if done:
+                    break
 
-                    payload: dict = {
-                        "status": "ok",
-                        "active_likelihoods": likelihoods,
-                        "established_facts_count": len(graph.established_facts),
-                        "tool_calls_remaining": graph.tool_call_budget - graph.tool_calls_used,
-                    }
-                    if convergence.stop:
-                        payload["convergence_signal"] = convergence.reason
-                        payload["convergence_message"] = CONVERGENCE_MESSAGE.content.format(
-                            reason=convergence.reason
+                if name == "update_hypothesis_graph":
+                    # Bookkeeping — free, does not count against budget.
+                    try:
+                        raw_ev = EvidenceInput(
+                            tool_called=inputs["new_evidence"]["tool_called"],
+                            observation=inputs["new_evidence"]["observation"],
+                            supports=inputs["new_evidence"]["supports"],
+                            confidence_delta=inputs["new_evidence"]["confidence_delta"],
                         )
+                        graph_update = GraphUpdate(
+                            action=inputs.get("action", "update"),
+                            current_focus=inputs.get("current_focus"),
+                            merge_into_id=inputs.get("merge_into_id"),
+                            new_hypothesis_description=inputs.get("new_hypothesis_description"),
+                            new_hypothesis_severity=inputs.get("new_hypothesis_severity"),
+                            new_hypothesis_initial_likelihood=inputs.get("new_hypothesis_initial_likelihood"),
+                            new_evidence=raw_ev,
+                            likelihood_changes=inputs.get("likelihood_changes", {}),
+                            hypotheses_to_rule_out=inputs.get("hypotheses_to_rule_out", []),
+                            new_established_facts=inputs.get("new_established_facts", []),
+                            next_experiment_rationale=inputs.get("next_experiment_rationale", ""),
+                        )
+                    except Exception as exc:
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": json.dumps({"status": "error", "message": str(exc)}),
+                        })
+                        continue
 
+                    validation = validate_graph_update(graph_update, graph)
+                    if not validation.valid:
+                        if verbose:
+                            print(f"\n[Graph update REJECTED]\n{validation}")
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": json.dumps({
+                                "status": "validation_error",
+                                "errors": validation.errors,
+                            }),
+                        })
+                    else:
+                        update_graph(graph, graph_update)
+                        snapshot_graph(graph)
+                        _likelihood_snapshots.append(snapshot_likelihoods(graph))
+                        if verbose:
+                            print_top_hypothesis(graph)
+                        active = sorted(
+                            [h for h in graph.hypotheses if h.status == HypothesisStatus.ACTIVE],
+                            key=lambda h: -h.likelihood,
+                        )
+                        likelihoods = ", ".join(f"{h.id}={h.likelihood:.0%}" for h in active)
+                        turn_span.start_observation(
+                            name="update_hypothesis_graph",
+                            as_type="span",
+                            input={
+                                "action": graph_update.action,
+                                "likelihood_changes": graph_update.likelihood_changes,
+                            },
+                            output={"normalized_likelihoods": likelihoods},
+                        ).end()
+
+                        convergence = should_stop(graph, _likelihood_snapshots)
+                        if convergence.stop and verbose:
+                            print(f"\n[Convergence] {convergence.reason} — "
+                                  f"top={convergence.top_hypothesis.likelihood:.0%}")
+
+                        payload: dict = {
+                            "status": "ok",
+                            "active_likelihoods": likelihoods,
+                            "established_facts_count": len(graph.established_facts),
+                            "tool_calls_remaining": graph.tool_call_budget - graph.tool_calls_used,
+                        }
+                        if convergence.stop:
+                            payload["convergence_signal"] = convergence.reason
+                            payload["convergence_message"] = CONVERGENCE_MESSAGE.content.format(
+                                reason=convergence.reason
+                            )
+
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": json.dumps(payload),
+                        })
+
+                elif name == "stop_investigation":
+                    graph.tool_calls_used += 1
+                    done = True
+                    diagnosis = _make_diagnosis(inputs)
+                    graph.termination_reason = "stop_investigation"
+                    if ground_truth is not None:
+                        _score_diagnosis(diagnosis, ground_truth, trace)
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": json.dumps(payload),
-                    })
-
-            elif name == "stop_investigation":
-                graph.tool_calls_used += 1
-                done = True
-                diagnosis = _make_diagnosis(inputs)
-                graph.termination_reason = "stop_investigation"
-                if ground_truth is not None:
-                    _score_diagnosis(diagnosis, ground_truth, trace)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": "Investigation complete. Diagnosis recorded.",
-                })
-                if verbose:
-                    print(f"\n[stop_investigation]")
-                    print(diagnosis)
-            else:
-                if graph.tool_calls_used >= graph.tool_call_budget:
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": json.dumps({
-                            "status": "budget_exhausted",
-                            "message": BUDGET_EXHAUSTED_MESSAGE.content.format(
-                                budget=graph.tool_call_budget
-                            ),
-                        }),
+                        "content": "Investigation complete. Diagnosis recorded.",
                     })
                     if verbose:
-                        print(f"\n[Budget cap] {name} discarded — budget consumed")
-                    continue
-                graph.tool_calls_used += 1
-                result = dispatch_tool(name, inputs)
-                result_json = json.dumps(result, indent=2)
-                turn_span.start_observation(
-                    name=name,
-                    as_type="tool",
-                    input=inputs,
-                    output=result,
-                ).end()
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result_json,
-                })
-                if verbose:
-                    print(f"\n[Tool result: {name}]")
-                    print(result_json)
+                        print(f"\n[stop_investigation]")
+                        print(diagnosis)
+                    break
+                else:
+                    if graph.tool_calls_used >= graph.tool_call_budget:
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": json.dumps({
+                                "status": "budget_exhausted",
+                                "message": BUDGET_EXHAUSTED_MESSAGE.content.format(
+                                    budget=graph.tool_call_budget
+                                ),
+                            }),
+                        })
+                        if verbose:
+                            print(f"\n[Budget cap] {name} discarded — budget consumed")
+                        continue
+                    graph.tool_calls_used += 1
+                    result = dispatch_tool(name, inputs)
+                    result_json = json.dumps(result, indent=2)
+                    turn_span.start_observation(
+                        name=name,
+                        as_type="tool",
+                        input=inputs,
+                        output=result,
+                    ).end()
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result_json,
+                    })
+                    if verbose:
+                        print(f"\n[Tool result: {name}]")
+                        print(result_json)
 
-        messages.append({"role": "user", "content": tool_results})
-        turn_span.update(metadata={"stop_reason": response.stop_reason, "done": done})
-        turn_span.end()
+            messages.append({"role": "user", "content": tool_results})
+            turn_span.update(metadata={"stop_reason": response.stop_reason, "done": done})
+        finally:
+            turn_span.end()
 
         if done:
             break
@@ -417,47 +417,36 @@ def run_investigation(
         if verbose:
             print("\n[Loop] tool budget exhausted — requesting final synthesis")
 
-        # The last turn's tool results are in messages but unprocessed.
-        # Give the model one final turn so it can call stop_investigation.
-        if messages and messages[-1]["role"] == "user":
-            content = messages[-1]["content"]
-            if isinstance(content, list):
-                content.append({
-                    "type": "text",
-                    "text": (
-                        f"Budget exhausted ({graph.tool_call_budget} tool calls consumed). "
-                        "Call stop_investigation NOW with your best diagnosis from the "
-                        "evidence gathered so far. No further query tools are available."
-                    ),
-                })
-            try:
-                final_resp = client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=2048,
-                    system=SYSTEM_PROMPT.content,
-                    tools=[t for t in TOOL_DEFINITIONS if t["name"] == "stop_investigation"],
-                    tool_choice={"type": "tool", "name": "stop_investigation"},
-                    messages=messages,
-                )
-                if verbose:
-                    for block in final_resp.content:
-                        if hasattr(block, "text") and block.text:
-                            print(f"\n[Final reasoning]\n{block.text}")
+        # Give the model one final turn with only stop_investigation available.
+        # tool_choice forces the call — no message mutation needed.
+        try:
+            final_resp = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=2048,
+                system=SYSTEM_PROMPT.content,
+                tools=[t for t in TOOL_DEFINITIONS if t["name"] == "stop_investigation"],
+                tool_choice={"type": "tool", "name": "stop_investigation"},
+                messages=messages,
+            )
+            if verbose:
                 for block in final_resp.content:
-                    if getattr(block, "type", None) == "tool_use" and block.name == "stop_investigation":
-                        inputs = block.input
-                        diagnosis = _make_diagnosis(inputs)
-                        graph.termination_reason = "budget_exhausted_with_diagnosis"
-                        if ground_truth is not None:
-                            _score_diagnosis(diagnosis, ground_truth, trace)
-                        if verbose:
-                            print(f"\n[stop_investigation — final synthesis]")
-                            print(diagnosis)
-                        break
-                else:
-                    print("[agent] final synthesis: model did not call stop_investigation", file=sys.stderr)
-            except Exception as exc:
-                print(f"[agent] final synthesis error: {exc}", file=sys.stderr)
+                    if hasattr(block, "text") and block.text:
+                        print(f"\n[Final reasoning]\n{block.text}")
+            for block in final_resp.content:
+                if getattr(block, "type", None) == "tool_use" and block.name == "stop_investigation":
+                    inputs = block.input
+                    diagnosis = _make_diagnosis(inputs)
+                    graph.termination_reason = "budget_exhausted_with_diagnosis"
+                    if ground_truth is not None:
+                        _score_diagnosis(diagnosis, ground_truth, trace)
+                    if verbose:
+                        print(f"\n[stop_investigation — final synthesis]")
+                        print(diagnosis)
+                    break
+            else:
+                print("[agent] final synthesis: model did not call stop_investigation", file=sys.stderr)
+        except Exception as exc:
+            print(f"[agent] final synthesis error: {exc}", file=sys.stderr)
 
     trace.update(
         output={
