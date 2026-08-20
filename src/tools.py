@@ -567,8 +567,9 @@ def _query_logs(inputs: dict) -> dict:
         sql += f" AND severity IN ({placeholders})"
         params.extend(severity_filter)
     if filter_text:
-        sql += " AND message LIKE ?"
-        params.append(f"%{filter_text}%")
+        escaped = filter_text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        sql += " AND message LIKE ? ESCAPE '\\'"
+        params.append(f"%{escaped}%")
     sql += " ORDER BY timestamp LIMIT ?"
     params.append(max_results + 1)
 
@@ -630,6 +631,15 @@ def _query_deployment_history(inputs: dict) -> dict:
         }
 
     db_path = _data_dir() / "deployments.db"
+    if not db_path.exists():
+        return {
+            "tool_name": "query_deployment_history",
+            "status": "error",
+            "error": {"error_type": "service_unavailable",
+                      "message": "deployments.db not found — run the data generator first",
+                      "retryable": False},
+            "query_metadata": {"latency_ms": 0},
+        }
     t0 = time.monotonic()
     con = sqlite3.connect(str(db_path))
     rows = con.execute(
@@ -727,18 +737,28 @@ def _query_feature_distributions(inputs: dict) -> dict:
         }
 
     db_path = _data_dir() / "feature_store.db"
+    if not db_path.exists():
+        return {
+            "tool_name": "query_feature_distributions",
+            "status": "error",
+            "error": {"error_type": "service_unavailable",
+                      "message": "feature_store.db not found — run the data generator first",
+                      "retryable": False},
+            "query_metadata": {"latency_ms": 0},
+        }
     t0 = time.monotonic()
     con = sqlite3.connect(str(db_path))
+    try:
+        def _fetch_window(t_start: float, t_end: float) -> list:
+            return con.execute(
+                "SELECT features FROM requests WHERE timestamp >= ? AND timestamp <= ?",
+                (t_start, t_end),
+            ).fetchall()
 
-    def _fetch_window(t_start: float, t_end: float) -> list:
-        return con.execute(
-            "SELECT features FROM requests WHERE timestamp >= ? AND timestamp <= ?",
-            (t_start, t_end),
-        ).fetchall()
-
-    baseline_rows  = _fetch_window(b_start, b_end)
-    comparison_rows = _fetch_window(c_start, c_end)
-    con.close()
+        baseline_rows  = _fetch_window(b_start, b_end)
+        comparison_rows = _fetch_window(c_start, c_end)
+    finally:
+        con.close()
     latency_ms = int((time.monotonic() - t0) * 1000)
 
     def _extract(rows: list, feat: str) -> list:
@@ -789,6 +809,9 @@ def _query_code_diffs(inputs: dict) -> dict:
     commit_after  = inputs.get("commit_after",  "").strip()
     paths         = inputs.get("paths") or []
 
+    import re as _re
+    _SHA_RE = _re.compile(r"^[0-9a-f]{7,40}$")
+
     if not commit_before or not commit_after:
         return {
             "tool_name": "query_code_diffs",
@@ -800,6 +823,19 @@ def _query_code_diffs(inputs: dict) -> dict:
             },
             "query_metadata": {"latency_ms": 0},
         }
+
+    for ref_name, ref_val in (("commit_before", commit_before), ("commit_after", commit_after)):
+        if not _SHA_RE.match(ref_val):
+            return {
+                "tool_name": "query_code_diffs",
+                "status": "error",
+                "error": {
+                    "error_type": "invalid_parameter",
+                    "message": f"{ref_name} {ref_val!r} is not a valid commit SHA (7–40 hex chars)",
+                    "retryable": False,
+                },
+                "query_metadata": {"latency_ms": 0},
+            }
 
     repo = str(_PIPELINE_REPO)
     cmd  = ["git", "diff", commit_before, commit_after, "--", *paths] if paths else \
@@ -832,7 +868,7 @@ def _query_code_diffs(inputs: dict) -> dict:
             "query_metadata": {"latency_ms": 10000},
         }
 
-    if result.returncode != 0 and result.stderr:
+    if result.returncode != 0:
         return {
             "tool_name": "query_code_diffs",
             "status": "error",

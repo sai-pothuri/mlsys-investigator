@@ -86,7 +86,6 @@ def run_mock(scenario: Scenario) -> None:
         tool_result = scenario.dispatch_tool(fixture.tool_called, fixture.tool_inputs)
         tool_json = json.dumps(tool_result, indent=4)
         _section("Tool Result (raw)", tool_json)
-        graph.tool_calls_used += 1
 
         _section("Observation", fixture.observation)
 
@@ -117,6 +116,7 @@ def run_mock(scenario: Scenario) -> None:
             )
 
         if result.valid:
+            graph.tool_calls_used += 1
             update_graph(graph, fixture.update)
             snapshot_graph(graph)
             applied_count += 1

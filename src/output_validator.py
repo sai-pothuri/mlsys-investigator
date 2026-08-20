@@ -19,10 +19,11 @@ Checks performed (dispatched by action):
     8. new_hypothesis_initial_likelihood (if given) is in [0, 1]
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import List
 
-from hypothesis_graph import GraphUpdate, HypothesisGraph, Severity, TOOL_TO_EVIDENCE_TYPE
+from hypothesis_graph import GraphUpdate, HypothesisGraph, HypothesisStatus, Severity, TOOL_TO_EVIDENCE_TYPE
 
 
 @dataclass
@@ -39,22 +40,23 @@ class ValidationResult:
 def validate_graph_update(update: GraphUpdate, graph: HypothesisGraph) -> ValidationResult:
     errors: List[str] = []
     existing_ids = {h.id for h in graph.hypotheses}
+    active_ids = {h.id for h in graph.hypotheses if h.status == HypothesisStatus.ACTIVE}
 
     # Action-specific checks
     if update.action == "update":
         if not update.current_focus:
             errors.append("action='update' requires current_focus to be set")
-        elif update.current_focus not in existing_ids:
+        elif update.current_focus not in active_ids:
             errors.append(
-                f"current_focus {update.current_focus!r} does not match any hypothesis ID in the graph"
+                f"current_focus {update.current_focus!r} does not reference an ACTIVE hypothesis"
             )
 
     elif update.action == "merge":
         if not update.merge_into_id:
             errors.append("action='merge' requires merge_into_id to be set")
-        elif update.merge_into_id not in existing_ids:
+        elif update.merge_into_id not in active_ids:
             errors.append(
-                f"merge_into_id {update.merge_into_id!r} does not match any hypothesis ID in the graph"
+                f"merge_into_id {update.merge_into_id!r} does not reference an ACTIVE hypothesis"
             )
 
     elif update.action == "create":
@@ -80,11 +82,15 @@ def validate_graph_update(update: GraphUpdate, graph: HypothesisGraph) -> Valida
             f"is not a registered tool name"
         )
 
-    for h_id in update.likelihood_changes:
+    for h_id, v in update.likelihood_changes.items():
         if h_id not in existing_ids:
             errors.append(
                 f"likelihood_changes references unknown hypothesis ID {h_id!r} "
                 f"(hallucinated ID)"
+            )
+        elif not math.isfinite(v):
+            errors.append(
+                f"likelihood_changes[{h_id!r}] is not finite: {v!r}"
             )
 
     for h_id in update.hypotheses_to_rule_out:

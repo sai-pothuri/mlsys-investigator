@@ -229,5 +229,9 @@ def update_graph(graph: HypothesisGraph, update: GraphUpdate) -> HypothesisGraph
     if total > 0:
         for h in active:
             h.likelihood = round(h.likelihood / total, 4)
+    elif active:
+        uniform = round(1.0 / len(active), 4)
+        for h in active:
+            h.likelihood = uniform
 
     return graph

@@ -102,10 +102,14 @@ def _print_metric_summary(output_dir: str, scenario: InjectionScenario) -> None:
             (m, failure_start, failure_end),
         ).fetchall()
         failure_vals = [r[0] for r in rows]
+        import math as _math
         b_avg = sum(baseline_vals) / len(baseline_vals) if baseline_vals else float("nan")
         f_avg = sum(failure_vals) / len(failure_vals) if failure_vals else float("nan")
         delta = f_avg - b_avg if baseline_vals and failure_vals else float("nan")
-        print(f"  {m:<28} {b_avg:<18.4f} {f_avg:<18.4f} {delta:>+8.4f}")
+        if _math.isnan(b_avg) or _math.isnan(f_avg):
+            print(f"  {m:<28} {'(no data)':<18} {'(no data)':<18} {'n/a':>8}  [WARNING: empty window]")
+        else:
+            print(f"  {m:<28} {b_avg:<18.4f} {f_avg:<18.4f} {delta:>+8.4f}")
     con.close()
     print()
 
