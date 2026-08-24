@@ -19,7 +19,8 @@ from generator.params import FeatureConfig, FeatureParams, InferenceParams, LogP
 from generator.schema import query_feature_values, query_metrics
 
 
-MODEL_DIR = "model/artifacts"
+from pathlib import Path
+MODEL_DIR = str(Path(__file__).resolve().parent.parent / "model" / "artifacts")
 
 N_BINS = 10  # bins for PSI computation
 
