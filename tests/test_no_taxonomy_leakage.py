@@ -13,7 +13,7 @@ import json
 import pytest
 
 from hypothesis_graph import EvidenceInput, FailureCategory, GraphUpdate
-from agent import _SYSTEM_PROMPT
+from agent import SYSTEM_PROMPT
 from tools import TOOL_DEFINITIONS
 
 # Every identifier that must never appear in agent-facing artefacts.
@@ -28,8 +28,8 @@ _AGENT_MODELS = [EvidenceInput, GraphUpdate]
 
 def test_system_prompt_no_taxonomy_leakage():
     for name in sorted(_FORBIDDEN):
-        assert name not in _SYSTEM_PROMPT, (
-            f"FailureCategory identifier '{name}' found in _SYSTEM_PROMPT (agent.py). "
+        assert name not in SYSTEM_PROMPT.content, (
+            f"FailureCategory identifier '{name}' found in SYSTEM_PROMPT (prompts.py). "
             "FailureCategory is an eval-side contract and must never appear in agent prompts."
         )
 

@@ -26,7 +26,8 @@ from generator.params import (
 from generator.schema import query_metrics
 
 
-MODEL_DIR = "model/artifacts"
+from pathlib import Path
+MODEL_DIR = str(Path(__file__).resolve().parent.parent / "model" / "artifacts")
 
 # ---------------------------------------------------------------------------
 # Helpers
