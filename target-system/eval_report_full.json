@@ -1,0 +1,1204 @@
+{
+  "generated_at": "2026-09-08T21:26:41.409797+00:00",
+  "n_scenarios": 18,
+  "repeats_per_scenario": 1,
+  "n_runs": 18,
+  "judge_enabled": true,
+  "judge_raters": 3,
+  "total_elapsed_s": 2162.9,
+  "runs": [
+    {
+      "scenario_id": "feature_drift",
+      "ground_truth": "feature_drift",
+      "predicted": "feature_drift",
+      "top1_correct": true,
+      "top3_correct": true,
+      "confidence": 0.92,
+      "tool_calls_used": 7,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 62.6,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 4,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 1.0,
+        "scores": [
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is largely well-grounded and coherent, but contains one notable hallucination: it states \"All other 11 features are perfectly stable (PSI < 0.002 for all tested)\" \u2014 the hypothesis graph only mentions 5 other features (account_age_days, monthly_spend, num_transactions_30d, avg_transaction_value, days_since_last_login), not 11. This is a fabricated number. All other factual claims trace directly to evidence in the graph: the accuracy drop from 0.867\u21920.690 (\u221217.7%), confidence rise from 0.274\u21920.535, login_failure_rate PSI=14.18 vs threshold 0.25, mean collapse from 0.150\u21920.035, no deployments found, and stable latency/error rates. The reasoning is highly coherent \u2014 the evidence clearly supports feature drift as the root cause, the mechanism (upstream data corruption causing near-zero values on a historically informative feature) is logically sound and directly tied to the observed confidence/accuracy paradox. The recommended actions are specific and immediately actionable: investigate the upstream auth system and ETL pipeline, apply mean imputation as a short-term fix, and set PSI alerts. Confidence of 0.92 is reasonably defensible given the very strong PSI signal (14.18 vs 0.25 threshold) and isolation of a single feature, though slightly high given the mechanism (schema change vs pipeline failure) remains unconfirmed. Overall this is a high-quality diagnosis with one hallucinated number."
+          },
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is largely excellent \u2014 well-reasoned, specific, and actionable \u2014 but contains one notable hallucination: the diagnosis states \"All other 11 features are perfectly stable (PSI < 0.002 for all tested)\" when the hypothesis graph only mentions 5 other features (account_age_days, monthly_spend, num_transactions_30d, avg_transaction_value, days_since_last_login), not 11. The graph says \"All other 5 features have PSI < 0.002.\" Claiming 11 features is a fabricated number not present in the evidence. All other factual claims (PSI=14.18, mean collapse from 0.150 to 0.035, accuracy drop from 0.867 to 0.690, confidence rise from 0.274 to 0.535, no deployments found, threshold 0.25) are correctly grounded in the graph. The causal reasoning is coherent: single-feature extreme drift \u2192 model makes confident but wrong predictions \u2192 accuracy drops while confidence rises. The no-deployment evidence is correctly used to rule out code changes. The recommended actions are specific and immediately executable: investigate the upstream authentication/ETL pipeline, apply mean imputation as short-term mitigation, and set up PSI-based drift alerting. Confidence of 0.92 is slightly aggressive given no root-cause confirmation of WHY the feature collapsed (schema change vs. pipeline failure), but the evidence is strong enough to defensibly support high confidence. Overall a high-quality diagnosis with one clear hallucination (the \"11 features\" claim)."
+          },
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is overall very strong and well-grounded. Most claims trace directly to the hypothesis graph: the accuracy drop (0.867\u21920.690, -17.7%), confidence increase (0.274\u21920.535), login_failure_rate PSI=14.18, mean collapse from 0.150\u21920.035 (77% reduction), zero deployments, and stable latency/error rate are all confirmed in the evidence. The reasoning is coherent \u2014 the mechanism linking feature value collapse to confident-but-wrong predictions is well-explained. The recommended actions are specific and executable (investigate upstream auth/ETL pipeline, apply mean imputation fallback, set PSI alert). Confidence of 0.92 is defensible given the dramatic single-feature drift with no competing explanations.\n\nOne hallucination is detected: the diagnosis states \"All other 11 features are perfectly stable (PSI < 0.002 for all tested)\" but the graph only mentions \"5 other features\" (account_age_days, monthly_spend, num_transactions_30d, avg_transaction_value, days_since_last_login) \u2014 so \"11 features\" is not supported by the evidence in the graph. This inflates the number of stable features, which is a factual claim not grounded in the hypothesis graph. This is a minor but real hallucination that warrants noting, though it doesn't substantially undermine the core diagnosis."
+          }
+        ]
+      },
+      "tier": "easy",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "bad_deployment",
+      "ground_truth": "bad_deployment",
+      "predicted": "feature_encoding_bug",
+      "top1_correct": false,
+      "top3_correct": true,
+      "confidence": 0.93,
+      "tool_calls_used": 5,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 61.1,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 5,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded. Every factual claim traces directly to evidence in the hypothesis graph: the v2.2.0 deployment at 2024-01-06T02:00 UTC, the specific error messages (ValueError with shape mismatch 1,12 vs 1,14; SchemaValidationError with counts 11/12; ValidationError for account_age_days null; XGBoostError for NaN/infinity), the error rate numbers (0.46%\u21923.85%, 8x increase), the latency p99 figures (226ms\u2192639ms), and the accuracy delta (~0.1%). No hallucinated facts are introduced. The causal chain is coherent and tight: deployment changelog mentions updated normalization pipeline \u2192 logs show dimension mismatch and missing field errors beginning 6 minutes post-deploy \u2192 error rate spikes while accuracy is stable (confirming serving errors rather than model quality regression). The recommended action is specific and immediately executable: roll back to v2.1.0, audit feature_engineering.py for the 12-feature schema, fix account_age_days population, and add dimension validation tests. The 0.93 confidence is well-calibrated given the multiple corroborating log entries, perfect temporal correlation with deployment, and consistent pattern across all error types."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "Every factual claim in the diagnosis traces directly to evidence in the hypothesis graph. The ValueError message with exact shapes (1,12)/(1,14), the SchemaValidationError with count 11/12, the ValidationError for account_age_days, the XGBoostError, the error rate numbers (0.46%\u21923.85%), the latency figures (226ms\u2192639ms), the deployment timestamp (2024-01-06T02:00 UTC), and the version (v2.1.0\u2192v2.2.0) are all explicitly recorded in the graph's evidence. No hallucinations detected. The reasoning is tight and coherent: the log errors directly explain the error rate spike without accuracy degradation, perfectly consistent with a feature encoding bug causing serving exceptions rather than model quality issues. The recommended action is highly specific and immediately actionable: roll back to v2.1.0 with concrete follow-up steps (audit feature_engineering.py, fix account_age_days population, add dimensionality validation tests, use canary deployment). Confidence of 0.93 is well-calibrated given the multiple corroborating log messages, the precise timing correlation, and the mechanistic explanation supported by direct error messages."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "Every factual claim in the diagnosis traces directly to evidence in the hypothesis graph. The specific error messages (ValueError with shape mismatch 1,12/1,14, SchemaValidationError with 11/12, ValidationError for account_age_days null, XGBoostError with NaN/infinity), the metrics (error rate 0.46%\u21923.85%, latency p99 226ms\u2192639ms, accuracy 0.867\u21920.866), deployment timing (v2.1.0\u2192v2.2.0 at 2024-01-06T02:00 UTC), and the changelog text (\"updated feature normalization pipeline\") are all explicitly recorded in the graph's evidence nodes. No numbers or events are invented. The reasoning is tight and coherent: dimension mismatches in the scaler directly explain the errors, the timing (errors 6 minutes post-deploy) and accuracy-vs-error-rate dissociation together strongly support a serving-side encoding bug rather than a model quality regression. The recommended actions are specific and executable: roll back to v2.1.0, audit feature_engineering.py for 12-feature consistency, fix account_age_days population, add dimensionality integration tests. Confidence of 0.93 is well-supported by multiple independent, consistent error types all appearing within minutes of the deployment and pointing to the same root cause."
+          }
+        ]
+      },
+      "tier": "easy",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "upstream_schema_change",
+      "ground_truth": "upstream_schema_change",
+      "predicted": "upstream_schema_change",
+      "top1_correct": true,
+      "top3_correct": true,
+      "confidence": 0.97,
+      "tool_calls_used": 5,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 48.6,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 5,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded. Every factual claim traces directly to evidence in the hypothesis graph: PSI=16.24, mean shift from ~729 to ~5056 days, the exact log message about 'created_at' fallback at 2024-01-06T00:22Z, the schema validation failure with 312 out-of-range values at 00:15Z, the confidence drop from 0.274 to 0.139 (-0.135 delta), and the absence of deployments. No numbers or events are hallucinated. The reasoning chain is tightly coherent: upstream column removal \u2192 fallback to insertion_timestamp \u2192 inflated account_age_days \u2192 out-of-distribution model inputs \u2192 confidence collapse. The recommended actions are specific and immediately executable: restore the 'created_at' column, change schema validation to hard-fail, add contract checks, implement range guardrails with a specific threshold (1825 days). The 0.97 confidence is well-justified given the exact timestamp correlation, explicit log confirmation, and complete absence of competing explanations \u2014 not a single open question remains. This is a textbook high-quality ML failure diagnosis."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded. Every factual claim traces directly to evidence in the hypothesis graph: PSI=16.24, mean shift from 728.998 to 5055.72 days, the specific log message at 2024-01-06T00:22Z about missing 'created_at' and fallback to insertion_timestamp, the schema validation failure at 00:15Z with 312 out-of-range values, the confidence drop from 0.274 to 0.139 (-0.135 delta, which the diagnosis correctly characterizes as ~49%), and the absence of deployments. No numbers or events are introduced that aren't present in the graph. The reasoning is tight and coherent: upstream column removal \u2192 fallback to wrong timestamp \u2192 inflated account_age_days \u2192 OOD inputs \u2192 confidence degradation. The recommended actions are specific and immediately executable (restore the column, change schema validation to hard-fail, add range guards with a concrete threshold of 1825 days). Confidence of 0.97 is well-justified given the direct log evidence pinpointing the exact cause with a precise timestamp match and no competing hypotheses remaining. No hallucinations detected."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "Every factual claim in the diagnosis traces directly to evidence in the hypothesis graph. The PSI=16.24, baseline mean ~729 days, comparison mean ~5056 days, confidence drop from 0.274 to 0.139, the exact log message about 'customer_profile missing column created_at; falling back to row insertion_timestamp', the 312 out-of-range values detected by schema validation, and the absence of deployments are all explicitly recorded in the graph's evidence observations. No numbers or events are fabricated. The reasoning chain is tight and coherent: upstream schema change \u2192 fallback to wrong timestamp \u2192 inflated account_age_days \u2192 extreme distributional drift \u2192 model confidence collapse. Each link is directly supported by the evidence. The recommended actions are specific and immediately executable: restore the created_at column, implement hard-fail schema validation, add pipeline ingestion contracts, and set range-based guardrails with a specific threshold (1825 days). The 0.97 confidence is well-calibrated given the precise log message pinpointing the cause, the exact timing alignment, PSI far exceeding threshold, and complete absence of competing explanations \u2014 the evidence is exceptionally strong and consistent."
+          }
+        ]
+      },
+      "tier": "easy",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "infrastructure_latency_spike",
+      "ground_truth": "infrastructure_latency_spike",
+      "predicted": "infrastructure_latency_spike",
+      "top1_correct": true,
+      "top3_correct": true,
+      "confidence": 0.97,
+      "tool_calls_used": 4,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 57.2,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 4,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 4.666666666666667
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 1.0,
+        "scores": [
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 4,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is largely well-grounded and coherent, but contains one notable hallucination: the diagnosis text specifically references \"Redis on feature-store:6379\" and \"TimeoutError: Connection to feature-store:6379 timed out\" \u2014 neither \"Redis\" nor \"6379\" nor that exact error message wording appears anywhere in the hypothesis graph's evidence. The graph logs show 'TimeoutError: Feature store lookup timed out after 200ms' (not a connection timeout to 6379), and there is no mention of Redis or the port number. The diagnosis also mentions \"ValidationError: account_age_days expected float, got null\" and \"XGBoostError NaN inputs\" which do not appear in the hypothesis graph's evidence observations. These are fabricated specifics not grounded in the recorded evidence.\n\nThe core reasoning is coherent and strong: disk I/O saturation (842ms await vs <5ms normal) \u2192 feature store lookup timeouts \u2192 cascading inference latency and error rate, while accuracy remains stable. All major metrics cited (p99 5565ms vs 208ms, p50 262ms vs 45ms, error rate 2.39% vs 0.48%, throughput ~500 RPS) are directly traceable to established facts. The ruling-out of alternative causes (no deployments, stable accuracy, stable throughput) is sound.\n\nActionability is excellent \u2014 specific, executable steps are provided: check for runaway compaction/RDB dumps on the Redis host, failover to replica, monitor specific thresholds, add disk I/O alerting, and implement a fallback feature path.\n\nConfidence of 0.97 is slightly high given that the evidence comes from a single log query with 100 sampled entries, and some details about the feature store technology/port were hallucinated rather than confirmed, suggesting the agent may be overconfident. Still, the directional evidence is very consistent and strong, so ~0.90-0.95 would be more defensible."
+          },
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is overall excellent and well-grounded in the hypothesis graph evidence. Most factual claims trace directly to the graph: the 842ms vs <5ms await, queue depth of 38, p99 latency of 5565ms vs 208ms baseline, p50 of 262ms vs 45ms, error rate 2.39% vs 0.48%, accuracy unchanged, throughput stable, timeout errors from 00:13 UTC, and no deployments in the window.\n\nHowever, there is one hallucination: the diagnosis explicitly mentions \"Redis on feature-store:6379\" and a specific error message \"TimeoutError: Connection to feature-store:6379 timed out\" \u2014 specifying Redis and port 6379 \u2014 but the hypothesis graph evidence only records \"TimeoutError: Feature store lookup timed out after 200ms\" without any mention of Redis, port 6379, or any specific technology. This is an introduced detail not present in the graph evidence.\n\nAdditionally, the diagnosis mentions \"ValidationError: account_age_days expected float, got null\" and \"XGBoostError NaN inputs\" \u2014 these specific error messages do not appear in the hypothesis graph evidence as recorded. These appear to be plausible but invented details not grounded in the graph.\n\nDespite these hallucinated specifics, the core causal chain (disk I/O saturation \u2192 feature store timeouts \u2192 elevated inference latency and errors) is perfectly coherent and well-supported. The recommended actions are specific, executable, and directly relevant (check for runaway compaction/RDB dump, failover to replica, add disk I/O alerting). Confidence of 0.97 is slightly high given that some details were not fully confirmed (e.g., what exactly caused the disk I/O saturation is not established), but the evidence for the feature store being the root cause is strong and consistent, making it defensible. The overall diagnosis quality is high despite the hallucinated specifics."
+          },
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is comprehensive, well-reasoned, and actionable. Most factual claims trace directly back to graph evidence: the 842ms disk await, <5ms normal, connection pool queue depth of 38, 5565ms p99, 208ms baseline, 2.39% error rate, 0.48% baseline, accuracy figures, throughput stability, and no-deployment finding are all in established_facts or evidence observations. The cascade chain (disk I/O \u2192 feature store timeouts \u2192 elevated inference latency) is logically sound and well-supported.\n\nHowever, one hallucination is detected: the diagnosis specifically names the feature store as \"Redis on feature-store:6379\" and mentions `TimeoutError: Connection to feature-store:6379 timed out`. The graph's log evidence mentions `TimeoutError: Feature store lookup timed out after 200ms` \u2014 there is no mention of \"Redis\", \"6379\", or the specific connection string \"feature-store:6379\" anywhere in the hypothesis graph. The diagnosis also mentions `ValidationError: account_age_days expected float, got null` and `XGBoostError NaN inputs` \u2014 these specific error types/messages do not appear in the graph evidence, which only describes \"TimeoutError\" and \"Slow lookup warnings.\" These fabricated details constitute hallucination.\n\nThe confidence of 0.97 is slightly high given that the investigation used only 4 of 8 tool calls and some questions (e.g., exact cause of disk saturation \u2014 RDB dump, compaction, etc.) remain open, but it's generally defensible given the strong convergent evidence. The actionability is excellent with specific, executable steps. Overall, this is a high-quality diagnosis with a minor but clear hallucination penalty."
+          }
+        ]
+      },
+      "tier": "easy",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "model_version_rollback_regression",
+      "ground_truth": "model_version_rollback_regression",
+      "predicted": "model_version_rollback_regression",
+      "top1_correct": true,
+      "top3_correct": true,
+      "confidence": 0.97,
+      "tool_calls_used": 6,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 73.1,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4.666666666666667,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "Every factual claim in the diagnosis traces directly to evidence in the hypothesis graph. The deployment history confirms the rollback from v2.1.0 to v2.0.5 at 2024-01-06T01:00Z. The log entries confirm the exact error messages cited (SchemaValidationError with \"got 11, expected 12\", KeyError for referral_source, XGBoostError, ValidationError for account_age_days). The metrics match precisely (error_rate 0.0239 vs 0.0046 baseline, latency_p99 435ms vs 225ms, accuracy barely changed). The \"4 months old\" model claim and the \"referral_source added on 2024-01-03\" claim both appear in the logs. The feature pipeline zero-deployments finding (from H2) is correctly used to confirm no pipeline change occurred. The reasoning is tightly coherent: incompatible model + feature schema mismatch \u2192 specific error types \u2192 runtime failures (not quality degradation). The recommended action is specific and immediately executable: re-deploy v2.1.0 or train a new compatible model, investigate the original canary issue separately, and implement schema compatibility checks. Confidence of 0.97 is well-supported by multiple independent evidence types (logs, metrics, deployment history) all consistently pointing to the same root cause with no ambiguity. No hallucinations detected."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded in the hypothesis graph evidence. Every specific claim traces directly to recorded observations: the rollback from v2.1.0 to v2.0.5 at 01:00Z (deployment history), the specific log messages with exact error types and timestamps (SchemaValidationError \"got 11, expected 12\", KeyError for referral_source, XGBoostErrors, ValidationErrors for account_age_days), the exact metrics (error rate 0.0046\u21920.0239, latency 225ms\u2192435ms, accuracy delta -0.0012, confidence delta -0.0005), and the 01:05Z log confirming rollback didn't resolve the issue. The feature count discrepancy is coherently explained: referral_source was added on 2024-01-03, model v2.0.5 is 4 months old, so it never saw this feature. The reasoning chain from rollback\u2192schema mismatch\u2192multiple error types is tight and logically sound. The recommended actions are specific and immediately executable: redeploy v2.1.0 or train a new model with the 11-feature schema, and implement schema compatibility checks. Confidence of 0.97 is well-supported by multiple corroborating evidence types (logs, metrics, deployment history) with no contradictory evidence remaining active. H2 was properly ruled out with solid evidence (zero feature pipeline deployments in the relevant window). No hallucinations detected \u2014 all numbers and events appear in the graph."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded. Every factual claim traces directly to evidence in the hypothesis graph: the rollback from v2.1.0 to v2.0.5 at 01:00Z (deployment_history), the specific log messages about SchemaValidationError (got 11, expected 12), KeyError for referral_source, XGBoostErrors, and ValidationErrors for account_age_days (logs evidence), the metrics values (error_rate 0.0046\u21920.0239, latency_p99 225ms\u2192435ms, accuracy delta -0.0012, confidence delta -0.0005) all come directly from the query_metrics observation. The 2024-01-03 addition of referral_source and the model being 4 months old also appear in the logs evidence. No hallucinated numbers or events are present.\n\nReasoning coherence is strong: the schema mismatch explanation cleanly connects the rollback to the specific error types observed. The observation that accuracy barely changed while error rate spiked 5x correctly supports a runtime failure interpretation rather than model quality degradation. The argument that the rollback was worse than the original issue is supported by the log at 01:05Z showing error rate remained elevated post-rollback.\n\nActionability is excellent: the recommended actions are specific \u2014 re-deploy v2.1.0 or train a new model with the 11-feature schema, investigate the original canary p99 issue separately, and implement schema compatibility checks before rollbacks. These are all executable steps an on-call engineer can act on immediately.\n\nCalibration: 0.97 confidence is very high, and the evidence is indeed very strong and consistent across multiple evidence types (logs, metrics, deployment history). The only minor concern is that the feature count discrepancy description is slightly inconsistent (the log says \"got 11, expected 12\" but the established facts say \"v2.0.5 expects 12 features but receives 11\" \u2014 these are the same thing, just with v2.0.5 expecting 12 and receiving 11 from the current pipeline that added referral_source). The evidence strongly supports the diagnosis, making 0.97 defensible, though marginally overconfident given there's a minor ambiguity about whether the feature count mismatch is fully explained (the pipeline supposedly added referral_source making it 12 features, yet the error says it received 11 - there's a slight logical question there). Overall this is a high-quality diagnosis."
+          }
+        ]
+      },
+      "tier": "easy",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "label_pipeline_corruption",
+      "ground_truth": "label_pipeline_corruption",
+      "predicted": "upstream_schema_change",
+      "top1_correct": false,
+      "top3_correct": true,
+      "confidence": 0.97,
+      "tool_calls_used": 4,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 52.2,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 5,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is excellent across all dimensions. Every factual claim traces directly to the hypothesis graph's evidence: the timestamp of the schema change (2024-01-05 23:40 UTC), the accuracy drop (0.865\u21920.579, delta=-0.286), the join alignment rate collapse (99.2%\u219262%), the 38% label mismatch, the fallback to nearest-timestamp heuristic, the stable prediction_confidence (0.274\u21920.272), stable latency_p50, stable error_rate, and the absence of deployment events. No numbers or events are invented. The reasoning chain is tight and coherent: upstream schema change \u2192 broken join key \u2192 mislabeled predictions \u2192 corrupted accuracy metric, with strong exonerating evidence for the model itself. The recommended action is highly specific and immediately executable: update the join key from session_id to request_id, recompute metrics for the affected window, coordinate with the upstream team for schema versioning, and investigate secondary connection/lock issues. Confidence of 0.97 is well-calibrated given the precise timestamp match, two corroborating log entries (WARNING and ERROR), and complete consistency of all other metrics \u2014 no open questions remain. No hallucinations detected."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "Every factual claim in the diagnosis is directly grounded in the hypothesis graph's evidence. The accuracy drop from 0.865 to 0.579 (delta -0.286), the primary key switch from session_id to request_id at 2024-01-05 23:40 UTC, the 38% join failure rate, the alignment rate drop from 99.2% to 62%, the timestamp-heuristic fallback, the stable prediction_confidence (0.274\u21920.272), latency_p50, and error_rate \u2014 all are explicitly recorded in the graph's observations. No numbers or events are invented. The reasoning chain is tight and coherent: an upstream schema change broke the label join key, causing mislabeled accuracy computation, while model-side metrics stayed flat, ruling out model or infrastructure degradation. The recommended actions are specific and immediately executable: update the join key from session_id to request_id, recompute metrics for the affected window, coordinate with the upstream team on schema versioning, and investigate secondary connection/lock issues. The 0.97 confidence is well-supported by two independent evidence sources (metrics and logs) that together paint a consistent, complete picture with no alternative explanations remaining open."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded in the hypothesis graph evidence. Every specific claim traces directly to recorded observations: the timestamp of the schema change (2024-01-05 23:40 UTC), the join key switch from session_id to request_id, the 38% join failure rate, the alignment rate drop from 99.2% to 62%, the accuracy delta (-0.286, from 0.865 to 0.579), prediction_confidence values (0.274\u21920.272), and the fallback to nearest-timestamp heuristic matching \u2014 all are explicitly recorded in the evidence nodes. No numbers or events are hallucinated. The reasoning chain is tight and coherent: the schema change caused join failures, fallback produced wrong labels, corrupted accuracy metric explains the observed drop, while unchanged confidence/latency/error_rate exonerates the model. The recommended action is highly specific and immediately executable: update the join key from session_id to request_id, recompute metrics for the affected window, coordinate with upstream on schema versioning, and investigate secondary DB lock issues. The 0.97 confidence is well-calibrated given the precise timestamp correlation, two corroborating log entries, and multiple lines of exonerating evidence converging on a single explanation with no competing hypotheses remaining active."
+          }
+        ]
+      },
+      "tier": "medium",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "training_serving_skew",
+      "ground_truth": "training_serving_skew",
+      "predicted": "feature_encoding_bug",
+      "top1_correct": false,
+      "top3_correct": true,
+      "confidence": 0.95,
+      "tool_calls_used": 6,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 79.6,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is tightly grounded in the hypothesis graph. Every factual claim traces directly to recorded evidence: the accuracy drop (0.867\u21920.660, delta -0.207), confidence drop (0.274\u21920.140, delta -0.134), error rate and latency being essentially unchanged, the v2.1.1\u2192v2.1.2 deployment at 2024-01-06T00:00:00Z with changelog \"pre-normalize monetary features before scaler (INFRA-2290)\", the specific feature names monthly_spend and avg_transaction_value, and the PSI scores (<0.002) for all features. No figures or events are introduced that don't appear in the graph. The reasoning chain is coherent and compelling: stable raw distributions + exact timing with deployment + serving-only transformation change = training-serving skew. The mechanism explanation (scaler receives pre-normalized rather than raw values) follows logically from the evidence. The recommended action is specific and immediately executable: roll back inference_service to v2.1.1, with a clear path for a proper fix involving replicating the normalization in the training pipeline. Confidence of 0.95 is slightly aggressive given that the code diff query failed and the actual transformation logic was not directly inspected, but the circumstantial evidence is very strong and consistent, making 0.95 defensible. Overall this is an exemplary diagnosis."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is well-grounded in the hypothesis graph evidence. Every factual claim traces back to actual observations: the accuracy drop (0.867\u21920.660, -20.7%), confidence drop (0.274\u21920.140, -13.4%), error rate/latency stability, the v2.1.1\u2192v2.1.2 deployment changelog mentioning INFRA-2290, the specific feature names (monthly_spend, avg_transaction_value), and the PSI scores (<0.002) are all directly recorded in the graph. No hallucinated numbers or events are introduced. The reasoning is coherent: stable input distributions + exact timing match with a serving-side transformation change = training-serving skew as the mechanism. The causal chain (model trained on raw values, now receiving pre-normalized values, causing double-transformation) is logically tight and supported by the evidence. The recommended actions are specific and executable: roll back to v2.1.1 immediately, then replicate normalization in training pipeline if the optimization is needed. Confidence of 0.95 is slightly aggressive given that the code diff query failed and the actual double-normalization mechanism wasn't directly confirmed in code \u2014 it's inferred from the changelog and PSI evidence \u2014 but the convergence of multiple strong signals (exact timing, stable inputs, single deployment, explicit changelog) makes high confidence defensible. Overall a high-quality diagnosis."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded. Every factual claim traces directly to evidence in the hypothesis graph: the accuracy drop of 20.7% (0.867\u21920.660), confidence drop of 13.4% (0.274\u21920.140), the v2.1.1\u2192v2.1.2 deployment at 2024-01-06T00:00:00Z, the changelog entry about \"pre-normalize monetary features before scaler (INFRA-2290)\", the specific feature names (monthly_spend, avg_transaction_value), PSI scores all below 0.002, and the unchanged error rate (+0.03%) and latency (+35ms p99) are all directly present in the graph's evidence. No hallucinations detected. The reasoning coherence is strong: stable raw input distributions + exact deployment timing + serving-only transformation change = training-serving skew is a logical and well-supported conclusion. The recommended action is highly actionable: roll back to v2.1.1 immediately, with a specific named service and version, plus a concrete fix path (replicate normalization in training pipeline). The confidence of 0.95 is slightly high given that the code diff query failed and the mechanism (double normalization vs. wrong scale) was inferred rather than directly verified, but the circumstantial evidence is very strong and internally consistent, making 0.95 defensible if slightly aggressive."
+          }
+        ]
+      },
+      "tier": "medium",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "data_freshness_degradation",
+      "ground_truth": "data_freshness_degradation",
+      "predicted": "data_freshness_degradation",
+      "top1_correct": true,
+      "top3_correct": true,
+      "confidence": 0.97,
+      "tool_calls_used": 6,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 82.2,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.667,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is extremely well-grounded in the hypothesis graph evidence. Every key claim traces directly to recorded observations: the 11.6h job delay, queue depth of 14,200 vs. normal <500, the 12h-stale snapshot at 2024-01-06T01:00Z, the connection pool at 85% (34/40), days_since_last_login PSI=3.55 with mean collapsing from 3.07 to 1.09, all other features PSI <0.002, prediction_confidence drop of 0.12 (0.275\u21920.153), and label pipeline ConnectionErrors starting at 2024-01-05T19:53Z. The one minor note is the claim that connection pool saturation began \"as early as 2024-01-05T19:31Z\" \u2014 this specific timestamp does not appear explicitly in the graph (the graph says label pipeline errors started at 19:53Z and that pool saturation 'began before the batch job backup'), so this precise timestamp is slightly ungrounded, though not wildly fabricated. The reasoning chain is coherent and tight: stale snapshot \u2192 frozen feature values \u2192 PSI spike \u2192 confidence drop \u2192 accuracy degradation. The causal chain is well-supported and non-circular. Actions are specific and executable: force-trigger the job, scale workers, fix connection pool, add freshness alerting, investigate labels.internal. Confidence of 0.97 is very high, and the evidence is strong and consistent, though a small deduction is warranted because not all details (like the 19:31Z timestamp) are explicitly grounded, and some causal links (e.g., connection pool exhaustion as the root trigger) are inferred rather than directly confirmed."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is overwhelmingly well-grounded in the hypothesis graph evidence. Nearly every quantitative claim traces back to logged observations: the 11.6h SLA breach at 2024-01-06T00:05Z, queue depth 14,200 vs normal <500, connection pool at 85% (34/40), the stale snapshot timestamp of 2024-01-05T12:03:00Z, PSI=3.55 for days_since_last_login, mean collapse from 3.07\u21921.09 days, stable PSIs <0.002 for other features, confidence drop from 0.275\u21920.153, and label pipeline ConnectionErrors starting 2024-01-05T19:53Z. The reasoning chain is highly coherent: connection pool exhaustion \u2192 batch job backlog \u2192 stale snapshot \u2192 feature distribution collapse \u2192 model confidence degradation, with all other features ruling out broader infrastructure failure. Recommended actions are specific and executable: force-refresh the snapshot, scale workers, fix the connection pool, add freshness alerting, and investigate labels.internal. Confidence of 0.97 is slightly aggressive given that the exact origin of the connection pool exhaustion remains unconfirmed (an open inference), but the evidence for the end-to-end chain is strong. One potential hallucination: the diagnosis states connection pool saturation began \"as early as 2024-01-05T19:31Z\" \u2014 this specific timestamp does not appear in the hypothesis graph's evidence (which only mentions label pipeline errors starting at 2024-01-05T19:53Z and logs noting pool at 85% \"repeatedly throughout incident\"). This introduced timestamp is not grounded in any recorded observation, warranting hallucination=true despite the otherwise excellent quality."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is overwhelmingly grounded in evidence from the hypothesis graph. Key facts like user_activity_rollup being 11.6h behind SLA, queue depth 14,200 vs <500 normal, days_since_last_login PSI=3.55, mean drop from 3.07\u21921.09 days, connection pool at 85% (34/40), prediction_confidence drop from 0.275\u21920.153, all other features showing PSI<0.002, and label pipeline ConnectionErrors to labels.internal:443 all appear in the graph's evidence. The reasoning chain is tight and coherent: connection pool exhaustion \u2192 batch job backlog \u2192 stale snapshot \u2192 feature distribution shift (PSI=3.55) \u2192 model accuracy/confidence degradation. Recommended actions are specific and executable (trigger user_activity_rollup manually, scale workers, increase connection pool limit, add freshness alerting, investigate labels.internal). However, there is one hallucination: the diagnosis mentions the connection pool exhaustion \"began saturating as early as 2024-01-05T19:31Z\" \u2014 this specific timestamp does not appear in the hypothesis graph evidence (the graph only mentions label pipeline errors starting at 2024-01-05T19:53Z, not 19:31Z). This is a fabricated timestamp. Additionally, the diagnosis states the batch job backlog started \"~2024-01-05T18:00Z\" which also doesn't appear in the graph evidence (the graph states it was 11.6h delayed starting at 2024-01-06T00:05Z, implying ~18:25Z, but the specific \"18:00Z\" is not recorded). These minor fabrications are notable but don't undermine the core diagnosis. Confidence of 0.97 is perhaps slightly high given the open question of whether the connection pool exhaustion was the true root cause or a symptom of something else, but is broadly defensible given the strong convergent evidence."
+          }
+        ]
+      },
+      "tier": "medium",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "feature_encoding_bug",
+      "ground_truth": "feature_encoding_bug",
+      "predicted": "feature_encoding_bug",
+      "top1_correct": true,
+      "top3_correct": true,
+      "confidence": 0.95,
+      "tool_calls_used": 4,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 54.5,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4.666666666666667,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.333,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is excellent across all dimensions. Every factual claim in the diagnosis traces directly to observations in the hypothesis graph: the 2024-01-06T00:10Z timestamp, the \"9.8% of requests affected\" figure, the 612 occurrences at 02:00Z, the PSI=1.6595 value, baseline mean=0.653 vs comparison mean=0.903, the -0.016 confidence drop, the ~53ms p99 latency spike, and the unchanged error rate all appear verbatim in the graph's established facts and evidence entries. No numbers or events are invented. The causal chain is coherent: unknown category value \u2192 silent encoding to index 0 \u2192 corrupted feature input \u2192 accuracy degradation, with the timing coincidence strongly supporting the causal link. The recommended actions are specific and immediately executable: register product_category=3 in the encoder, deploy the updated encoder, add OOV alerting, and coordinate with the upstream team. Confidence of 0.95 is well-calibrated given two independent strong evidence streams (logs + PSI) that converge on the same cause with precise timing alignment. The only minor caveat is the curious accuracy note in established facts (accuracy slightly higher in primary window vs baseline), which the agent doesn't fully reconcile, but this doesn't undermine the core diagnosis."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is well-grounded overall. Nearly every factual claim traces directly to evidence in the hypothesis graph: the timestamp 2024-01-06T00:10Z, the 9.8% affected requests, the 612 occurrences in 2 hours, the PSI of 1.6595, baseline mean 0.653 vs comparison mean 0.903, the -0.016 confidence drop, and the ~53ms p99 latency spike all appear verbatim in the graph's evidence or established facts. The reasoning is highly coherent: a new unknown categorical value silently defaulting to index 0 would corrupt features for ~9.8% of requests, causing accuracy degradation without raising error rates \u2014 the logic is sound and the evidence strongly supports this conclusion. The recommended actions are specific and immediately executable (register value=3, deploy updated encoder, add OOV alerting, coordinate with upstream team, consider retraining). However, one minor hallucination is detected: the diagnosis states the 612 occurrences were described as \"likely a new catalog category not yet registered in the encoder\" \u2014 this specific quoted phrase does not appear in the graph's evidence observations; the graph simply states \"By 02:00Z there are 612 occurrences in 2h\" without that quoted characterization. The confidence of 0.95 is high but defensible given two strong, corroborating evidence sources (logs + PSI) that directly pinpoint the cause; a slight penalty is warranted because there is only one hypothesis explored and the agent stopped early (used only 4 of 8 tool calls), meaning alternative explanations weren't fully ruled out through independent evidence."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 5,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded. Every factual claim traces directly to evidence in the hypothesis graph: the 2024-01-06T00:10Z timestamp for product_category=3 appearance, the 9.8% affected requests, the 612 occurrences in 2 hours, the PSI of 1.6595, baseline mean 0.653 vs comparison mean 0.903, the -0.016 confidence drop, the ~53ms p99 latency spike, and the unchanged error rate \u2014 all come directly from observed evidence nodes. No hallucinations detected.\n\nThe reasoning is highly coherent: the silent encoding of unknown value=3 as index 0 directly explains why accuracy degrades (wrong feature values fed to model) without crashes (error rate unchanged), with reduced prediction confidence (model gets corrupted inputs), and elevated latency (possibly additional fallback processing). The timing alignment (00:10Z logs coincide exactly with degradation onset) is a strong causal link.\n\nThe recommended actions are specific and immediately executable: register product_category=3 in the encoder, deploy updated encoder, add OOV alerting, coordinate with upstream catalog team, consider retraining. These are concrete engineering actions an on-call engineer can act on right now.\n\nThe 0.95 confidence is well-calibrated given: (1) exact temporal coincidence of the encoding error and degradation onset, (2) large PSI confirming distribution shift, (3) log evidence explicitly naming the affected feature and percentage, (4) all other features normal. The evidence is strong and consistent, making 0.95 defensible."
+          }
+        ]
+      },
+      "tier": "medium",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "gradual_concept_drift",
+      "ground_truth": "gradual_concept_drift",
+      "predicted": "delayed_label_feedback_shift",
+      "top1_correct": false,
+      "top3_correct": false,
+      "confidence": 0.72,
+      "tool_calls_used": 7,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 97.3,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is well-grounded in the hypothesis graph's evidence. Every factual claim traces back to an observation: the label pipeline's persistent ConnectionError from Jan 1\u20135 is directly cited from the logs evidence in H3; the login_failure_rate PSI=4.116 and +43% mean shift are from H4's feature distribution evidence; all other feature PSI values being near-zero is confirmed; the accuracy drop of ~1% and prediction_confidence increase of +0.042 are from H1's metrics evidence; the inference config change on Jan 1 is from H2's deployment history. No numbers or events appear in the diagnosis that aren't in the graph. The reasoning is coherent: the label pipeline failure explains why reported accuracy may be unreliable (stale/incomplete labels), while the genuine feature drift in login_failure_rate explains real model degradation \u2014 together these produce a smooth, gradual decline without step-changes or latency/error spikes. The recommended actions are specific and actionable: restore connectivity to labels.internal, identify root cause (certificate, DNS, firewall, overloaded service), re-process failed label batches, investigate login_failure_rate spike. The confidence of 0.72 is reasonable given that H3 (label pipeline) has likelihood 0.3953 and H4 (feature drift) 0.3488, meaning neither is overwhelming but both are well-supported \u2014 a compound explanation with moderate confidence is defensible. One minor consideration: asserting \"compound failure\" with two simultaneous root causes slightly adds complexity, but the evidence does support both paths independently. The MetricsFlushError downstream degradation note is also grounded in the log evidence."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is thoroughly grounded in the hypothesis graph's evidence. Every factual claim traces back to recorded observations: the label pipeline ConnectionError from Jan 1 through Jan 5+ (H3 evidence), the login_failure_rate PSI=4.116 with 43% mean increase (H4 evidence), the accuracy drop of ~1% over 7 days with prediction_confidence increasing +0.042 (H1 evidence), all other features showing near-zero drift (H4 evidence), and the MetricsFlushError database locked error (H3 logs). No hallucinated numbers or events are present. The reasoning coherence is strong: the dual-cause explanation (label pipeline failure causing unreliable accuracy metrics + genuine feature drift causing real model degradation) logically explains the gradual decline pattern, overconfidence signal, and lack of step-change. The connection between rising confidence alongside falling accuracy and concept/feature drift is well-argued. The recommended actions are specific and immediately executable: restore connectivity to labels.internal (with specific failure modes to investigate), re-process failed batches from Jan 1, and investigate the login_failure_rate spike with concrete hypotheses (credential stuffing, auth system change, pipeline bug). Confidence at 0.72 is reasonable given two competing active hypotheses with roughly similar likelihoods (H3: 0.40, H4: 0.35), though the compound framing somewhat hedges the difficulty of assigning a single root cause. The calibration could arguably be slightly lower given the open question of which cause dominates, but 0.72 is defensible given the strength of evidence for both."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is thoroughly grounded in the hypothesis graph's evidence. Every factual claim traces back to an observation in the graph: the label pipeline ConnectionError failures from labels.internal (Jan 1-5+), the login_failure_rate PSI=4.116 with 43% mean increase, the accuracy drop of ~1% over 7 days (0.8621\u21920.8523), the prediction_confidence increase of +0.042, the MetricsFlushError log entries, the near-zero drift of all other features (PSI <0.01), and the minor inference_service config change on Jan 1. No numbers or events are asserted that don't appear in the graph evidence.\n\nThe reasoning is coherent and well-structured: the two co-occurring causes (label pipeline failure producing unreliable accuracy metrics, and genuine feature drift in login_failure_rate) both plausibly explain a gradual degradation pattern. The explanation of why there's no step-change is logically sound. The overconfidence pattern (rising prediction_confidence alongside falling accuracy) is correctly tied to concept drift into an out-of-distribution region.\n\nRecommended actions are specific and immediately executable: restore connectivity to labels.internal (with specific failure modes to investigate), re-process failed label batches, investigate the login_failure_rate spike for credential stuffing or auth system changes, and consider retraining. These are concrete, prioritized (P0/P1) steps an on-call engineer can act on now.\n\nConfidence of 0.72 is reasonable given that two competing root causes are active (not fully disambiguated) and the label pipeline failure may be masking the true accuracy picture. The graph does acknowledge open uncertainty about which is dominant, so 0.72 is defensible \u2014 perhaps slightly low given the strength of the label pipeline evidence, but not unreasonable given the compound nature of the diagnosis."
+          }
+        ]
+      },
+      "tier": "medium",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "model_calibration_drift",
+      "ground_truth": "model_calibration_drift",
+      "predicted": "label_pipeline_corruption",
+      "top1_correct": false,
+      "top3_correct": true,
+      "confidence": 0.92,
+      "tool_calls_used": 6,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 63.5,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "Every factual claim in the diagnosis traces directly to observations in the hypothesis graph: the accuracy drop (0.869\u21920.55, -31.9%), the confidence rise (0.271\u21920.85, +57.9%), the specific ConnectionError messages to labels.internal:443 starting at 2024-01-06T02:15, the recurring timestamps of label fetch failures (02:15, 02:42, 09:30, 11:25, 16:49, 21:58 on Jan 6), the MetricsFlushError starting 2024-01-05T22:29, zero deployments across all services, and stable latency/error rates \u2014 all directly grounded in the evidence. No hallucinated numbers or events are present. The reasoning is coherent: label fetch failures \u2192 corrupted accuracy metric \u2192 apparent accuracy collapse while model is unchanged, explained by divergence between genuine model confidence and corrupted ground truth. The causal chain is tight and non-circular. The recommended actions are specific and immediately executable: restore connectivity to labels.internal:443 (with specific diagnostic checks like TLS cert expiry, firewall rules, DNS), backfill labels for the exact time window, resolve the database lock, and add alerting. These are concrete enough for an on-call engineer to act on. The 0.92 confidence is slightly high given that the hypothesis wasn't fully confirmed (H2 remains \"active\" rather than \"confirmed\" \u2014 no direct evidence of what accuracy was computed against when labels were missing), but the evidence is strong and consistent, making ~0.85-0.90 more appropriate. The slight overconfidence is a minor issue. Overall this is an excellent diagnosis."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "Every factual claim in the diagnosis is directly traceable to evidence in the hypothesis graph. The label pipeline ConnectionError starting 2024-01-06T02:15, the specific timestamps (02:15, 02:42, 09:30, 11:25, 16:49, 21:58 on Jan 6), the accuracy drop from 0.869 to 0.55 (-31.9%), confidence rise from 0.271 to 0.85 (+57.9%), the MetricsFlushError beginning 2024-01-05T22:29, zero deployment events across all services, and stable latency/error rates are all directly recorded in the graph evidence. No hallucinated figures or events are present.\n\nThe reasoning chain is tightly coherent: label fetch failures \u2192 corrupted/missing ground-truth labels \u2192 accuracy appears to collapse while the model itself is unchanged (confirmed by stable confidence, no deployments, stable infrastructure) \u2192 score-accuracy divergence fully explained. The MetricsFlushError is appropriately treated as a secondary signal rather than overclaimed as root cause.\n\nRecommended actions are highly specific and immediately actionable: restore connectivity to labels.internal:443 with enumerated diagnostic steps (TLS cert, firewall, DNS, service health), backfill labels for the affected window, resolve the database lock, and add monitoring on label fetch failure rates. An on-call engineer could execute these immediately.\n\nConfidence of 0.92 is very high but is defensible given the strong, direct, temporally-correlated evidence: log errors matching the exact failure pattern starting exactly at the degradation onset, no alternative explanations with comparable evidence, and multiple corroborating signals. A slight penalization is warranted because the hypothesis graph labels H1 as \"ruled_out\" somewhat hastily (one evidence point) and H2 as likelihood 1.0 (perfect certainty is rarely warranted), but overall the confidence is reasonable given the compelling evidence pattern."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is tightly grounded in the hypothesis graph's evidence. Every factual claim traces directly back to observed evidence: the label pipeline ConnectionError starting 2024-01-06T02:15 with specific timestamps (02:15, 02:42, 09:30, 11:25, 16:49, 21:58), the MetricsFlushError beginning 2024-01-05T22:29, zero deployments across all services, accuracy drop from 0.869 to 0.55 (-31.9%), and confidence rise from 0.271 to 0.85 (+57.9%). No numbers or events appear in the diagnosis that aren't in the graph. The causal chain is coherent: label fetch failures \u2192 corrupted/missing ground truth \u2192 artifactual accuracy drop, while the model itself remains unchanged (evidenced by stable latency, near-zero error rate, no deployments, and rising confidence). The recommended actions are specific and executable: restore connectivity to labels.internal:443 with concrete debugging steps (TLS cert, firewall, DNS), backfill labels for the affected window, resolve the database lock, and add alerting on label fetch failures. Confidence of 0.92 is slightly high given that the graph doesn't confirm *why* labels.internal is unreachable or conclusively confirm that accuracy is computed against missing/default labels rather than partially stale ones, but the evidence is strong and consistent enough that 0.92 is only mildly aggressive rather than unreasonable."
+          }
+        ]
+      },
+      "tier": "medium",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "shadow_mode_leak",
+      "ground_truth": "shadow_mode_leak",
+      "predicted": "feature_pipeline_partial_failure",
+      "top1_correct": false,
+      "top3_correct": false,
+      "confidence": 0.82,
+      "tool_calls_used": 6,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 80.5,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 4,
+          "reasoning_coherence": 4,
+          "actionability": 4.333333333333333,
+          "calibration_reasonableness": 3.3333333333333335,
+          "overall": 4
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 1.0,
+        "scores": [
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 4,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 4,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is well-grounded overall, correctly citing the connection pool hitting 85% capacity at 2024-01-05T17:36Z, SchemaValidationErrors (11 vs 12 features) from 18:17Z, null account_age_days, XGBoostErrors, accuracy drop from 0.865 to 0.712 (-15.3pp), and PSI < 0.002. The causal chain (pool saturation \u2192 timeouts \u2192 partial vectors \u2192 accuracy drop) is coherent and well-supported. However, the diagnosis introduces specific details not found in the hypothesis graph: \"Redis at feature-store:6379\", \"200ms timeout exceeded\", \"max connections from 40\", and \"read replicas\" \u2014 none of these appear anywhere in the graph's evidence. These are hallucinations that inflate specificity. The claim that degradation onset was \"detected at 2024-01-06T00:00Z\" and that pool saturation was \"roughly 25 minutes before\" is somewhat misleading since the pool hit 85% at 17:36Z while the SchemaValidationErrors began at 18:17Z (41 minutes later), and the alert places onset at 2024-01-06T00:00Z (6+ hours later). The recommended actions are specific and executable (scale connection pool, add replicas, retry with backoff, circuit-breaker, alerting on >70% utilization), making it highly actionable. Confidence of 0.82 is reasonable given the strong but not definitive evidence chain. Overall a solid diagnosis with notable hallucinations on specific technical details."
+          },
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 4,
+            "actionability": 4,
+            "calibration_reasonableness": 3,
+            "overall": 4,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is mostly well-grounded in the hypothesis graph evidence, but there are a few notable issues:\n\n1. **Hallucination**: The diagnosis mentions \"Redis at feature-store:6379,\" a \"200ms timeout exceeded,\" and \"max connections from 40\" \u2014 none of these specific details (Redis technology, exact timeout value, or max connection count of 40) appear anywhere in the hypothesis graph evidence. These are fabricated specifics that look precise but have no backing in the recorded observations.\n\n2. **Evidence grounding (otherwise strong)**: The core claims \u2014 85% connection pool capacity from 17:36Z, SchemaValidationError (11 vs 12 features) from 18:17Z, null account_age_days, XGBoostErrors, accuracy drop from 0.865 to 0.712 (-15.3pp), PSI < 0.002, no deployment events, LabelPipelineErrors \u2014 all trace directly to the graph's evidence. The \"~25 minutes before accuracy degradation\" framing is slightly off (17:36Z to 18:17Z is ~41 minutes, and the alert onset is 2024-01-06T00:00Z, which is ~6.5 hours later), but the sequencing argument still holds.\n\n3. **Reasoning coherence**: The causal chain from connection pool saturation \u2192 feature lookup timeouts \u2192 missing features \u2192 schema validation errors \u2192 accuracy degradation is logical and consistent with the evidence. The ruling-out of drift (PSI) and schema changes (feature pipeline logs clean) is sound.\n\n4. **Actionability**: The recommended actions are specific and executable \u2014 scale connection pool, add read replicas, implement retry/circuit-breaker, alert on >70% pool utilization. This is actionable for an on-call engineer.\n\n5. **Calibration**: 0.82 confidence is somewhat high given that the hypothesis graph itself shows two competing active hypotheses (H1 at 0.64, H2 at 0.36), open questions remain partially unresolved, and the diagnosis introduces specifics (Redis, 200ms, 40 connections) not confirmed by evidence. A more defensible confidence would be ~0.65-0.70."
+          },
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 4,
+            "actionability": 4,
+            "calibration_reasonableness": 3,
+            "overall": 4,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is largely well-grounded in the hypothesis graph evidence, but contains some hallucinated specifics. The graph evidence supports: connection pool at 85% capacity from 2024-01-05T17:36Z, SchemaValidationErrors (11 vs 12 features) from 18:17Z, account_age_days null errors, XGBoostErrors, accuracy drop from 0.865 to 0.712 (-15.3pp), negligible PSI drift, and no deployment events. However, the diagnosis introduces \"Redis at feature-store:6379\" and \"200ms timeout exceeded\" \u2014 neither of these specifics appear anywhere in the hypothesis graph evidence. The graph mentions \"feature store timeouts and slow lookups\" and \"connection pool at 85%\" but never names the technology (Redis) or the specific timeout threshold (200ms). The \"max connections from 40\" in the recommended action is also not grounded in the graph. These constitute hallucinations of specific details.\n\nThe causal chain (connection pool saturation \u2192 feature lookup timeouts \u2192 incomplete feature vectors \u2192 accuracy drop) is coherent and well-supported by the evidence: the timeline aligns (pool saturation precedes errors which precede measured degradation), and the ruling-outs (PSI drift, no deployment) are correctly applied. However, the graph also shows the alert onset was at 2024-01-06 00:00Z, while the diagnosis says \"25 minutes before accuracy degradation\" relative to 18:17Z \u2014 this timing claim is somewhat muddled since the alert says degradation started at 2024-01-06 00:00Z but errors started 2024-01-05T18:17Z, which is about 5.7 hours, not 25 minutes. The \"25 minutes\" refers to pool saturation (17:36Z) to first errors (18:17Z), not to the measured accuracy degradation onset (2024-01-06 00:00Z). This is an imprecision but not a major error.\n\nThe recommended actions are specific and actionable: scale up connection pool, add read replicas, implement retry/circuit-breaker, add alerting at 70% utilization. These are concrete steps an on-call engineer can execute.\n\nConfidence at 0.82 is slightly high given some ambiguity \u2014 the graph still shows H1 and H2 as both \"active\" with the distinction not fully resolved, and there's some counter-evidence (the feature pipeline itself showed no schema errors suggesting the issue is at inference/feature store level rather than upstream schema). The 0.82 confidence is defensible but on the high side given lingering open questions about whether it's purely a connection pool issue vs. a schema change at the source."
+          }
+        ]
+      },
+      "tier": "medium",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "feature_pipeline_partial_failure",
+      "ground_truth": "feature_pipeline_partial_failure",
+      "predicted": "label_pipeline_corruption",
+      "top1_correct": false,
+      "top3_correct": false,
+      "confidence": 0.88,
+      "tool_calls_used": 6,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 64.9,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is thoroughly grounded in the hypothesis graph's evidence. Every factual claim traces back to recorded observations: the timestamp of label failures (2024-01-05T19:53Z), the service affected (labels.internal:443), the error type (LabelPipelineError/ConnectionError), the accuracy drop (0.904\u21920.866), confidence drop (0.275\u21920.163), stable error rate (0.0047), feature store pool at 85%, MetricsFlushError, and the absence of deployments. No hallucinated facts are present. The reasoning is coherent: label pipeline failures precede the accuracy degradation onset, inference is unaffected (hence stable error rate), and the pattern uniquely points to evaluation-layer corruption rather than model or serving issues. H1 (calibration drift) was appropriately ruled out. The recommended actions are specific and immediately executable \u2014 check DNS/TLS/firewall for labels.internal:443, scale connection pool, fix metrics.db, verify recovery \u2014 well above vague monitoring suggestions. Confidence at 0.88 is slightly high given that the graph doesn't directly confirm labels are actually missing/corrupted (only that fetches are failing), but the evidence chain is strong and the 0.88 figure is defensible. Overall, this is an exemplary diagnosis."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is tightly grounded in the hypothesis graph evidence. Every factual claim traces back to an observed data point: the timestamp of first label failure (2024-01-05T19:53Z), the accuracy values (0.904\u21920.866), prediction_confidence values (0.275\u21920.163), the error rate (0.0047), the specific error message (LabelPipelineError: ConnectionError to labels.internal:443), the feature store pool at 85% capacity, MetricsFlushError/database locked, and the absence of deployments. No hallucinated numbers or events are present.\n\nThe reasoning is coherent: label pipeline failures precede the accuracy drop by ~6 hours, inference serving is unaffected (stable error rate and latency), no deployments occurred, and H1 (calibration drift) was ruled out in favor of H2. The causal chain from label fetch failures \u2192 corrupt/missing ground-truth \u2192 degraded accuracy metric is logically sound and well-supported.\n\nRecommended actions are specific and actionable: check DNS/TLS/firewall for labels.internal:443, scale connection pool, fix metrics.db locking, verify recovery post-fix. An on-call engineer could execute these immediately.\n\nConfidence of 0.88 is slightly high given that the hypothesis graph doesn't definitively confirm *why* labels.internal became unreachable (the root of the root cause), but the pattern evidence is strong and consistent, so 0.88 is reasonably defensible rather than overconfident."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is thoroughly grounded in the hypothesis graph evidence. Every specific claim is traceable: the LabelPipelineError starting 2024-01-05T19:53Z, the accuracy drop from 0.904\u21920.866, confidence drop from 0.275\u21920.163, stable error rate of 0.0047, the connection to labels.internal:443, the feature store at 85% capacity, MetricsFlushError, and the inference service being clean. No numbers or events appear that aren't in the graph. The reasoning is coherent: label fetch failures precede the accuracy degradation onset, inference is unaffected (stable error rate/latency), and no deployments occurred \u2014 cleanly ruling out competing hypotheses. The recommended actions are specific and immediately executable: check DNS/TLS/firewall for labels.internal:443, scale connection pool, fix metrics.db lock, verify recovery. Confidence at 0.88 is slightly aggressive given that the graph doesn't fully confirm that label failures causally corrupt accuracy metrics (it's inferred, not directly measured), but the evidence is strong and consistent, making this confidence level mostly defensible. The note about \"6+ hours before degradation onset\" slightly overstates the gap (19:53 to 00:00 is ~4 hours, not 6+), though this appears to be a minor misstatement rather than a fabrication \u2014 the graph clearly shows 19:53Z start and 00:00 degradation, so this is a minor arithmetic error rather than a hallucination of a new fact. Overall, this is a high-quality diagnosis."
+          }
+        ]
+      },
+      "tier": "medium",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "delayed_label_feedback_shift",
+      "ground_truth": "delayed_label_feedback_shift",
+      "predicted": "upstream_schema_change",
+      "top1_correct": false,
+      "top3_correct": false,
+      "confidence": 0.78,
+      "tool_calls_used": 8,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 91.8,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded. Every factual claim traces directly to evidence in the hypothesis graph: the SchemaValidationError timestamps (05:34, 07:18, 09:08Z), the ValidationError timestamps (03:49, 06:13Z), the XGBoost NaN error timestamps (05:36, 05:52, 08:02, 08:30Z), the record count comparison (17,008 vs 23,649, 28% fewer), the zero feature pipeline deployments, the hotfix changelog content (\"revert feature normalization regression\"), and the PSI scores. No hallucinations detected \u2014 every number and event cited appears in the graph.\n\nThe reasoning chain is coherent and tight: upstream schema change \u2192 account_age_days becomes null \u2192 feature vector shrinks from 12 to 11 \u2192 NaN propagation \u2192 XGBoost errors \u2192 accuracy degradation. The hotfix misaddressed normalization while the real issue persisted, which explains why accuracy hasn't recovered. The causal logic is sound and well-supported.\n\nThe recommended actions are highly specific and executable: identify the upstream data source, add fallback imputation with a concrete value (~730 days mean), restore the upstream schema, and validate via SchemaValidationError rate monitoring. An on-call engineer could execute these immediately.\n\nConfidence of 0.78 is reasonable given the strong and consistent evidence (persistent post-hotfix errors, record count drop, zero pipeline deployments all pointing the same direction). Slightly conservative but defensible \u2014 there's no direct confirmation of what exactly changed upstream at 00:00Z, so some uncertainty is warranted. A minor quibble: the evidence is quite strong and convergent, so 0.78 could arguably be slightly higher, but it's not miscalibrated enough to penalize significantly."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is tightly grounded in evidence from the hypothesis graph. Every specific claim \u2014 the SchemaValidationError timestamps (05:34, 07:18, 09:08Z), the ValidationError timestamps (03:49, 06:13Z), the XGBoost NaN error timestamps (05:36, 05:52, 08:02, 08:30Z), the record counts (17,008 vs 23,649 baseline, 28% fewer), the PSI value (0.0011), the hotfix description (\"revert feature normalization regression\"), and the zero feature pipeline deployments \u2014 all trace directly to observations in the hypothesis graph. No numbers or events are invented.\n\nThe reasoning is coherent and well-structured: the logs show the schema mismatch persisting post-hotfix, the record count reduction corroborates silent failures, the XGBoost NaN errors are correctly identified as downstream consequences of the null account_age_days, and the hotfix's changelog is correctly used to explain why normalization-targeted fix wouldn't address the schema issue. The chain from upstream schema change \u2192 null account_age_days \u2192 11 features instead of 12 \u2192 NaN inputs \u2192 accuracy degradation is logical and well-supported.\n\nThe recommended actions are specific and executable: identify the upstream data source, add fallback imputation for account_age_days using the ~730-day mean, restore the upstream schema, and validate recovery by monitoring SchemaValidationError rate and accuracy metrics. These are concrete steps an on-call engineer can act on immediately.\n\nThe 0.78 confidence is reasonable given the strong evidence \u2014 logs, metrics, and deployment history all converge on H3. A slight deduction is warranted because the PSI analysis on valid records could mask some alternative explanations, and the exact upstream source hasn't been definitively identified, making 0.78 slightly conservative but defensible rather than miscalibrated."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is tightly grounded in the hypothesis graph evidence. Every specific claim maps directly to observations recorded in the graph: SchemaValidationErrors at 05:34, 07:18, 09:08Z; ValidationErrors for account_age_days at 03:49 and 06:13Z; XGBoost NaN errors at 05:36, 05:52, 08:02, 08:30Z; record count drop (17,008 vs 23,649 = 28%); zero feature pipeline deployments; hotfix changelog targeting normalization; and near-zero PSI scores on valid records. No numbers or events appear that aren't in the graph. The reasoning chain is coherent and direct: upstream schema change \u2192 account_age_days null \u2192 11 features instead of 12 \u2192 NaN inputs \u2192 model accuracy degradation, while the hotfix only addressed normalization and left this untouched. The recommended actions are specific and immediately executable: identify the upstream data source, add imputation as a short-term fix (with a concrete value ~730 days), restore the upstream schema, and monitor SchemaValidationError rate and accuracy. Confidence of 0.78 is reasonable given the strong log and distribution evidence, though one could argue it should be slightly higher given the consistency and volume of post-hotfix errors directly supporting H3. Overall this is a high-quality, well-supported diagnosis."
+          }
+        ]
+      },
+      "tier": "hard",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "cascading_upstream_failure",
+      "ground_truth": "cascading_upstream_failure",
+      "predicted": "upstream_schema_change",
+      "top1_correct": false,
+      "top3_correct": false,
+      "confidence": 0.97,
+      "tool_calls_used": 5,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 61.5,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 5
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded. Every factual claim \u2014 the timestamp (2024-01-06T00:10Z), the column name ('created_at'), the fallback behavior (insertion_timestamp), the PSI values (account_age_days=16.24, days_since_last_login=0.0005), the baseline/comparison means (729 vs 5056), the accuracy collapse (0.867\u21920.31), confidence collapse (0.274\u21920.139), the specific error messages (SchemaValidationError, ValidationError, XGBoostError), the feature count mismatch (11 vs 12), and the latency/throughput stability \u2014 all trace directly to observations recorded in the hypothesis graph's evidence. No numbers or events appear that are absent from the graph.\n\nThe causal chain is coherent and tight: removed 'created_at' \u2192 fallback to insertion_timestamp \u2192 corrupted account_age_days \u2192 cascading downstream errors. The PSI contrast (16.24 vs 0.0005) cleanly rules out broader feature drift as an alternative cause, and unchanged infra metrics rule out infrastructure. The reasoning is not circular.\n\nRecommended actions are specific and immediately executable: contact the upstream customer_profile team, restore/remap the created_at column, flush stale feature store entries since the known timestamp, verify PSI recovery, and add hard schema enforcement. These are actionable by an on-call engineer right now.\n\nThe one minor concern on calibration: confidence=0.97 is very high, and while the evidence strongly supports this root cause, a single hypothesis was investigated without exploring alternatives deeply (e.g., H1 is the only hypothesis, and 'feature_pipeline_partial_failure' and 'compound_drift_plus_deployment' are listed as alternatives but not formally ruled out through dedicated investigation). However, the evidence is genuinely strong and consistent, so 0.97 is defensible rather than overconfident \u2014 a slight ding rather than a serious error."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is tightly grounded in the hypothesis graph evidence. Every specific claim traces back to observed log entries or feature distribution metrics: the 2024-01-06T00:10Z timestamp for the schema change, the `created_at` column removal, the fallback to `insertion_timestamp`, account_age_days values in the 4900+ range (matching the graph's \"4900+\" and \"4,000\u20138,000\" range), PSI=16.24 with baseline mean 729 vs comparison mean 5056, days_since_last_login PSI=0.0005, accuracy collapse from 0.867 to 0.31, confidence from 0.274 to 0.139, SchemaValidationError (11 vs 12), ValidationError (null), and XGBoostError (NaN). No numbers or events are invented beyond what the graph records. One minor note: the diagnosis mentions \"days_since_last_login out of range [600,1200]\" being caused by \"insertion_timestamp bleeding into derived days_since_last_login,\" but the graph's evidence actually shows days_since_last_login PSI=0.0005 (no drift) and attributes the out-of-range values to a different mechanism \u2014 this slight inconsistency exists in the table but is clarified by the PSI row in the same table. It's not a fabrication per se, since the out-of-range observation is grounded in the first evidence entry. Reasoning is highly coherent: the cascade from dropped column \u2192 fallback \u2192 corrupted feature \u2192 all downstream errors is logically sound and well-structured. The recommended actions are specific and immediately executable: contact upstream team, restore/remap column, flush stale feature store entries, add hard schema enforcement. Confidence of 0.97 is defensible given the very strong and consistent evidence chain across two independent log queries with no competing hypotheses remaining, though one could argue 0.95 would be slightly more conservative given the minor inconsistency about days_since_last_login causation. Overall this is an exemplary diagnosis."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 5,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is exceptionally well-grounded. Every factual claim in the diagnosis text traces directly to observations recorded in the hypothesis graph's evidence: the 2024-01-06T00:10Z timestamp for the `created_at` column removal, the fallback to `insertion_timestamp`, `account_age_days` values in the 4,900\u20137,967 range, PSI=16.24 (baseline mean 729 vs comparison mean 5,056), days_since_last_login PSI=0.0005, accuracy collapse from 0.867 to 0.31, confidence collapse from 0.274 to 0.139, SchemaValidationError (11 vs 12), ValidationError (null), and XGBoostError (NaN). No numbers or events appear that aren't in the graph.\n\nThe reasoning coherence is strong: the diagnosis clearly traces a single upstream event (dropped column) through a precise causal chain to every observed symptom, with the PSI comparison between account_age_days (catastrophic) and days_since_last_login (negligible) effectively ruling out other feature drift explanations. The table format makes the causal chain explicit and each mechanism is logically sound.\n\nThe recommended action is highly actionable: contact the upstream `customer_profile` team to restore `created_at`, update the pipeline if intentionally renamed, flush stale feature store entries since the specific timestamp, verify distributions return to baseline, and add a hard schema enforcement check. These are specific, executable steps an on-call engineer could take immediately.\n\nOne minor note on calibration: 0.97 confidence is very high. While the evidence is strong and consistent, the investigation used only 5 of 8 tool calls and some questions around `days_since_last_login` out-of-range behavior (the diagnosis suggests insertion_timestamp \"bleeds\" into it, but the graph shows PSI=0.0005 for that feature, which slightly contradicts this claim) introduce a small amount of uncertainty. However, the 0.97 confidence is mostly defensible given the strong, consistent, multi-source evidence converging on a single root cause. The minor inconsistency about `days_since_last_login` bleeding from insertion_timestamp (when PSI shows no drift) is a slight logical tension but not a major hallucination \u2014 the logs did show out-of-range values for that field. Overall, this is a high-quality diagnosis with strong grounding, coherent reasoning, and actionable recommendations."
+          }
+        ]
+      },
+      "tier": "hard",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "model_staleness",
+      "ground_truth": "model_staleness",
+      "predicted": "gradual_concept_drift",
+      "top1_correct": false,
+      "top3_correct": true,
+      "confidence": 0.78,
+      "tool_calls_used": 7,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 90.7,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 5,
+          "reasoning_coherence": 4,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 4
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 0.0,
+        "scores": [
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 4,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 4,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is well-grounded in the hypothesis graph's evidence. Every specific number cited \u2014 PSI values (1.9665, 1.1956, 0.17), feature means (0.162\u21920.206, 3.69\u21925.97, 17.1\u219213.8), accuracy (0.847), prediction confidence (0.460), deployment gap (zero deployments since Sep 2023), and stable transactional PSI (<0.01) \u2014 all trace directly back to observations recorded in the graph. No hallucinated figures are present.\n\nReasoning coherence is strong: the agent connects user engagement behavior shifts (login failures, session duration, login frequency) to model degradation through the lens of a model frozen for 4+ months. The story is internally consistent. One slight weakness is that the PSI measurements were taken within January 2024 (not compared to a true historical baseline), which the graph explicitly flags as a limitation (\"Data history appears limited \u2014 cannot measure drift from this far back\"). The diagnosis acknowledges the drift but doesn't fully caveat that the PSI comparisons are within a 1-week window rather than the ideal months-long baseline, which somewhat weakens the causal chain. That said, the interpretation remains reasonable.\n\nActionability is excellent: the diagnosis provides concrete, tiered actions \u2014 trigger a retraining run with recent data, set PSI-based automated retraining triggers for specific features, and implement a periodic retraining schedule. An on-call engineer could act on these immediately.\n\nCalibration at 0.78 confidence is reasonable given strong but not perfect evidence (the baseline data limitation, the somewhat uncertain distinction between pure feature drift vs. concept drift). The graph shows H2 (feature drift) at 0.2975 and H1 (gradual concept drift) at 0.7025, and the diagnosis at 0.78 slightly exceeds the hypothesis likelihood but acknowledges both phenomena \u2014 defensible given the corroborating evidence.\n\nOverall this is a high-quality diagnosis with strong evidence grounding, actionable recommendations, and coherent reasoning, with only minor caveats around the baseline data limitations."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 4,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 4,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is well-grounded in the hypothesis graph's evidence. Every factual claim traces back to observations in the graph: the zero-deployment finding over 4+ months, the specific PSI scores (login_failure_rate=1.9665, days_since_last_login=1.1956, session_duration_min=0.1706), the mean shifts for each feature, the stable transactional features (PSI<0.01), accuracy of 0.847, and prediction_confidence of 0.460. No numbers or events are hallucinated.\n\nThe reasoning is largely coherent: feature drift in login-behavior signals (users logging in less, failing more, shorter sessions) combined with a frozen model trained 4+ months ago plausibly explains gradual accuracy erosion with low confidence scores. The connection between login engagement drift and the specific model output degradation is somewhat assumed (we don't have ground-truth label shift data), but it's a reasonable inference given no other explanations (no system errors, no deployment events, stable transactional features).\n\nOne minor coherence issue: the diagnosis is labeled \"gradual_concept_drift\" but the primary evidence is actually feature drift (input distribution shifts), not a shift in the P(Y|X) relationship. The agent conflates these somewhat \u2014 feature drift and concept drift are distinct, and the evidence more directly supports feature drift as the proximate cause. This weakens reasoning coherence slightly.\n\nThe recommended actions are specific and actionable: trigger retraining on recent 4-6 weeks of data, set PSI thresholds for automated retraining triggers (>0.25), and establish a periodic schedule. These are all executable by an on-call/ML engineer.\n\nConfidence of 0.78 is reasonable given the strong PSI evidence for feature drift and the confirmed model staleness, though the absence of baseline data before December 2023 introduces some uncertainty that is acknowledged. The score is defensible.\n\nOverall, this is a high-quality diagnosis with strong evidence grounding, mostly coherent reasoning (with a minor concept/feature drift conflation), excellent actionability, and appropriate calibration."
+          },
+          {
+            "evidence_grounding": 5,
+            "reasoning_coherence": 4,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 4,
+            "hallucination_detected": false,
+            "rationale": "The diagnosis is well-grounded in the hypothesis graph's evidence. Every factual claim traces back to observations recorded in the graph: the zero-deployment finding (4+ months for training pipeline, 2+ months for inference service), the specific PSI values (login_failure_rate=1.9665, days_since_last_login=1.1956, session_duration_min=0.1706), the mean shifts for each feature, the stable transactional features (PSI<0.01), and the low prediction_confidence (0.460) with accuracy of 0.847. No numbers or events are hallucinated.\n\nReasoning coherence is strong: the chain from zero retraining \u2192 frozen model \u2192 world changed \u2192 behavioral features drifting \u2192 degraded accuracy is logical and well-supported. The one slight weakness is that the graph has H1 (concept drift) and H2 (feature drift) both as active hypotheses with H2 being the current focus, yet the diagnosis selects \"gradual_concept_drift\" as the root cause category while the most concrete evidence found is feature drift (PSI scores). The distinction is defensible \u2014 observed feature drift is evidence of concept drift \u2014 but the reasoning could be slightly clearer about why concept drift is the chosen label over feature drift, given that feature drift is confirmed with hard PSI numbers.\n\nActionability is excellent: the recommended actions are specific \u2014 trigger retraining with recent 4\u20136 weeks of data, set PSI thresholds (>0.25) as automated triggers for specific features (login_failure_rate, days_since_last_login), and establish a periodic retraining schedule (weekly/biweekly). These are executable by an on-call engineer.\n\nCalibration: Confidence of 0.78 is reasonable given two active hypotheses (H1 at 0.70, H2 at 0.30) and strong but within-window-only PSI evidence. The note that baseline data before December 2023 was unavailable adds some uncertainty. Slightly high given the PSI data is only from within January 2024, but defensible.\n\nOverall a high-quality diagnosis with strong grounding, clear reasoning, and actionable recommendations."
+          }
+        ]
+      },
+      "tier": "hard",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "feature_importance_inversion",
+      "ground_truth": "feature_importance_inversion",
+      "predicted": "feature_encoding_bug",
+      "top1_correct": false,
+      "top3_correct": false,
+      "confidence": 0.95,
+      "tool_calls_used": 4,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 40.7,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 4,
+          "reasoning_coherence": 5,
+          "actionability": 5,
+          "calibration_reasonableness": 4,
+          "overall": 4
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 1.0,
+        "scores": [
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 4,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is largely well-grounded and coherent, but contains one clear hallucination: it references \"commit 5bc33439\" in the diagnosis text, yet no commit SHA appears anywhere in the hypothesis graph's evidence. The code diff tool call was explicitly rejected due to an invalid SHA format, so no commit hash was ever retrieved or confirmed. This is a fabricated detail.\n\nBeyond that one hallucination, the diagnosis is strong:\n- The exact timing match (accuracy 0.866\u21920.646, -22pp at 2024-01-06T00:00Z) is directly grounded in the established facts.\n- The changelog quote (\"Redefine login_failure_rate polarity per PROD-482 (field name unchanged)\") is directly grounded in the deployment history evidence.\n- The reasoning about training-serving skew from polarity inversion is logically coherent and well-explained \u2014 the feature distributions appearing normal while accuracy drops is a classic fingerprint of semantic inversion.\n- The infrastructure ruling-out (prediction_confidence -0.003, error_rate, latency stable) is grounded in established facts.\n- The recommended action is highly specific and actionable: roll back to v1.4.0, retrain with new polarity, deploy atomically, add CI/CD contract tests.\n- Confidence of 0.95 is reasonably calibrated given the strong circumstantial evidence (exact timing, explicit changelog), though the inability to inspect actual code diffs means a small uncertainty remains \u2014 0.95 is slightly aggressive but defensible given the changelog explicitly describes the change.\n\nThe hallucinated commit SHA is a meaningful error that warrants penalizing evidence_grounding and triggering hallucination_detected=true, but the overall diagnosis quality remains high."
+          },
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 4,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is largely well-grounded and coherent, but contains one clear hallucination: it references \"commit 5bc33439\" in the diagnosis text, which does not appear anywhere in the hypothesis graph's evidence. The code diff attempt explicitly failed (SHA format rejected), so no commit hash was ever retrieved or recorded. This is a fabricated detail.\n\nBeyond that single hallucination, the diagnosis is strong:\n- Evidence grounding: The timing match (0.866\u21920.646, -22pp at 2024-01-06T00:00Z), the deployment changelog (\"Redefine login_failure_rate polarity per PROD-482, field name unchanged\"), the stable infra metrics (prediction_confidence -0.003, error_rate, latency), and the normal feature distributions are all directly traceable to the established facts and evidence in the graph. The only fabricated element is the commit SHA.\n- Reasoning coherence: The logic is tight \u2014 deployment changelog explicitly describes polarity inversion, timing is exact, infra signals are clean, and PSI wouldn't catch a polarity flip. All four supporting pillars connect cleanly to the claimed root cause.\n- Actionability: The recommended action is highly specific: roll back to v1.4.0, retrain on new polarity data, redeploy atomically, and add a polarity contract test to CI/CD. An on-call engineer could execute step one immediately.\n- Calibration: 0.95 confidence is high but defensible \u2014 the deployment changelog literally describes the change, the timing is exact, and all alternative explanations are ruled out by the infra metrics. However, since the code diff was not actually retrieved (failed), there's a small unconfirmed gap (the actual implementation of the polarity change wasn't verified), making 0.95 slightly aggressive but not unreasonable given the changelog's explicitness."
+          },
+          {
+            "evidence_grounding": 4,
+            "reasoning_coherence": 5,
+            "actionability": 5,
+            "calibration_reasonableness": 4,
+            "overall": 4,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis is largely well-grounded and coherent, but contains one hallucination: the commit SHA \"5bc33439\" appears in the diagnosis text but is nowhere in the hypothesis graph's evidence. The graph notes the code diff query failed due to a rejected commit SHA format, so no commit hash was ever retrieved or recorded. This is a fabricated detail. Otherwise, all other factual claims \u2014 the version numbers (v1.4.0\u2192v1.4.1), the deployment timestamp (2024-01-06T00:00Z), the accuracy drop (0.866\u21920.646, -22pp), the PROD-482 changelog text, and the stable infra metrics \u2014 are directly grounded in the graph's established facts and evidence. The reasoning chain is logically tight: timing match + explicit changelog + stable distributions + no infra signals = polarity inversion causing training-serving skew. The recommended action is highly specific and immediately executable (rollback to v1.4.0, atomic retrain+deploy, add CI/CD contract test). Confidence of 0.95 is defensible given the strong convergent evidence, though slightly aggressive given the code diff could not be confirmed directly. The hallucination of the commit SHA is a meaningful flaw that warrants a deduction in evidence_grounding and overall score."
+          }
+        ]
+      },
+      "tier": "hard",
+      "repeat_index": 0,
+      "error": null
+    },
+    {
+      "scenario_id": "compound_drift_plus_deployment",
+      "ground_truth": "compound_drift_plus_deployment",
+      "predicted": "training_serving_skew",
+      "top1_correct": false,
+      "top3_correct": false,
+      "confidence": 0.72,
+      "tool_calls_used": 8,
+      "tool_call_budget": 8,
+      "termination_reason": "stop_investigation",
+      "elapsed_s": 292.6,
+      "judge": {
+        "model": "claude-sonnet-4-6",
+        "n_raters": 3,
+        "mean": {
+          "evidence_grounding": 3,
+          "reasoning_coherence": 3,
+          "actionability": 4,
+          "calibration_reasonableness": 2,
+          "overall": 3
+        },
+        "agreement": {
+          "evidence_grounding": 1.0,
+          "reasoning_coherence": 1.0,
+          "actionability": 1.0,
+          "calibration_reasonableness": 1.0,
+          "overall": 1.0
+        },
+        "overall_agreement": 1.0,
+        "hallucination_rate": 1.0,
+        "scores": [
+          {
+            "evidence_grounding": 3,
+            "reasoning_coherence": 3,
+            "actionability": 4,
+            "calibration_reasonableness": 2,
+            "overall": 3,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis identifies the feature pipeline v1.3.2\u2192v1.4.0 deployment on 2024-01-03 14:00 UTC as the root cause, which is grounded in the hypothesis graph. However, there are several issues:\n\n1. **Hallucination**: The diagnosis claims \"prediction_confidence collapsed from 0.274 \u2192 0.251 (\u22120.024)\". While the graph's established facts do mention \"prediction_confidence dropped by -0.024\", the specific absolute values (0.274 and 0.251) do not appear anywhere in the hypothesis graph evidence \u2014 these numbers appear fabricated or pulled from an unrecorded source.\n\n2. **Evidence grounding issues**: The diagnosis states \"No infrastructure errors or latency spikes\" \u2014 the logs evidence only covers zero errors related to specific keywords; there is no explicit latency check recorded in the graph. This is a minor overreach.\n\n3. **Reasoning coherence problems**: The hypothesis H2 was explicitly marked \"ruled_out\" in the graph, with the key evidence against it being that PSI values for both affected features (session_duration_min and referral_source) are negligibly small (PSI \u2248 0.0002-0.0003), well below any meaningful threshold. The agent's own investigation concluded this hypothesis was ruled out. Yet the final diagnosis promotes exactly this ruled-out hypothesis as the confirmed root cause with 0.72 confidence. The reasoning tries to explain away the low PSI (session_duration_min averages 18 min, well below 120-min clip), but the referral_source feature PSI being near-zero is harder to explain as training-serving skew.\n\n4. **The timezone rationalization** (\"The alert's cited '2024-01-05 00:00 UTC' deployment likely corresponds to the Jan-06 00:00 UTC inference deployment (timezone/offset reporting discrepancy)\") is speculative and not supported by any evidence in the graph.\n\n5. **Calibration**: 0.72 confidence for a hypothesis explicitly marked \"ruled_out\" in the graph is poorly calibrated. The graph's own established facts undermine the training-serving skew theory (tiny PSI values, session durations well below clip threshold).\n\n6. **Actionability**: The recommended actions are reasonably specific \u2014 retrain with new features, revert pipeline, use shared feature store \u2014 though they presuppose a conclusion that wasn't firmly established."
+          },
+          {
+            "evidence_grounding": 3,
+            "reasoning_coherence": 3,
+            "actionability": 4,
+            "calibration_reasonableness": 2,
+            "overall": 3,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis claims training-serving skew as the root cause based on the feature pipeline v1.3.2\u2192v1.4.0 deployment on 2024-01-03. However, the hypothesis graph explicitly ruled out H2 (training_serving_skew) with status \"ruled_out,\" largely because PSI values for both affected features were negligible (0.0002\u20130.0003), well below the 0.1 threshold, and the session_duration_min average (~18 min) is far below the 120-min clip threshold. The final diagnosis contradicts the graph's own conclusion by resurrecting a ruled-out hypothesis as the confirmed root cause.\n\nEvidence grounding issues: The diagnosis states \"prediction confidence collapsed from 0.274 \u2192 0.251 (\u22120.024)\" \u2014 the \u22120.024 delta is in the established facts, but the absolute values (0.274 and 0.251) do not appear anywhere in the hypothesis graph's evidence, making this a hallucination. The claim about \"no latency spikes\" is not directly grounded in any evidence node either. The \"timezone/offset reporting discrepancy\" explanation for the Jan-05 vs Jan-06 deployment date mismatch is speculative and not supported by any evidence in the graph.\n\nReasoning coherence: The core logic is weak. The graph's evidence explicitly shows PSI near zero for the features changed by the pipeline deployment, meaning real-world inputs weren't actually affected by the transformation changes. The agent's own investigation noted that session_duration averaging ~18 min means clipping at 120 min has \"negligible effect.\" The diagnosis dismisses this critical counter-evidence without strong justification, instead relying on the temporal proximity argument (22-hour lag) which is circumstantial.\n\nActionability: The recommended actions (retrain with new features, revert pipeline, use shared feature store) are reasonably specific and actionable for an on-call engineer, though \"retrain the model\" is a longer-term action.\n\nCalibration: 0.72 confidence is too high given that: (1) the hypothesis was explicitly ruled out in the graph, (2) the key feature distributions showed no meaningful shift, (3) the absolute confidence values cited are not in the evidence. A more defensible confidence would be 0.3\u20130.4 given the contradictory evidence."
+          },
+          {
+            "evidence_grounding": 3,
+            "reasoning_coherence": 3,
+            "actionability": 4,
+            "calibration_reasonableness": 2,
+            "overall": 3,
+            "hallucination_detected": true,
+            "rationale": "The diagnosis makes several claims that are partially or fully contradicted by the evidence in the hypothesis graph:\n\n1. **Hallucination detected**: The diagnosis states \"Prediction confidence collapsed from 0.274 \u2192 0.251 (\u22120.024)\" with specific numeric values. While the hypothesis graph's established facts do mention \"prediction_confidence dropped by -0.024,\" the specific values 0.274 and 0.251 do not appear anywhere in the graph's evidence. This constitutes a hallucination of specific numbers not grounded in the evidence.\n\n2. **Evidence grounding issues**: The diagnosis's main thesis (training-serving skew from the feature pipeline deployment) was actually **ruled out** in the hypothesis graph (H2 status = \"ruled_out\"). The key evidence against this hypothesis \u2014 PSI=0.0002 for session_duration_min, mean session duration of ~18 min well below the 120-min clip threshold \u2014 directly undermines the clipping argument. The diagnosis acknowledges the PSI findings but argues around them rather than accepting the ruling-out conclusion.\n\n3. **Reasoning coherence problems**: The diagnosis claims the 22-hour temporal lag between the feature pipeline deployment and the accuracy drop \"is consistent with lag from propagation across traffic regions,\" but this reasoning is speculative and not supported by any evidence in the graph. Furthermore, the graph explicitly establishes that \"session_duration_min average is ~18 min, well below the 120-min clip threshold, so clipping has negligible effect.\" The diagnosis essentially argues for a mechanism (clipping causing skew) that the evidence directly refutes.\n\n4. **Timezone discrepancy explanation**: The claim that the \"2024-01-05 00:00 UTC\" deployment \"likely corresponds to the Jan-06 00:00 UTC inference deployment (timezone/offset reporting discrepancy)\" is pure speculation with no evidence in the graph to support a timezone/reporting error.\n\n5. **Actionability**: The recommended actions are reasonably specific \u2014 retrain with new features, revert pipeline, ensure shared feature store. These are executable steps, though based on a questionable diagnosis.\n\n6. **Calibration**: A confidence of 0.72 is too high given that (a) the hypothesis was explicitly ruled out in the graph, (b) the key mechanism (clipping affecting feature distribution) was contradicted by PSI data, and (c) the agent's own graph shows H2 likelihood at only 0.1286. The diagnosis essentially overrides the agent's own investigation conclusions without new evidence."
+          }
+        ]
+      },
+      "tier": "hard",
+      "repeat_index": 0,
+      "error": null
+    }
+  ],
+  "summary": {
+    "n_completed": 18,
+    "n_errored": 0,
+    "errored_scenarios": [],
+    "top1_accuracy": 0.3333,
+    "top3_accuracy": 0.6111,
+    "mean_tool_calls": 5.7778,
+    "mean_elapsed_s": 80.8111,
+    "by_tier": {
+      "easy": {
+        "n": 5,
+        "top1_accuracy": 0.8,
+        "top3_accuracy": 1.0,
+        "mean_tool_calls": 5.4
+      },
+      "hard": {
+        "n": 5,
+        "top1_accuracy": 0.0,
+        "top3_accuracy": 0.2,
+        "mean_tool_calls": 6.4
+      },
+      "medium": {
+        "n": 8,
+        "top1_accuracy": 0.25,
+        "top3_accuracy": 0.625,
+        "mean_tool_calls": 5.625
+      }
+    },
+    "judge": {
+      "n_scored": 18,
+      "mean": {
+        "evidence_grounding": 4.667,
+        "reasoning_coherence": 4.778,
+        "actionability": 4.907,
+        "calibration_reasonableness": 4.093,
+        "overall": 4.704
+      },
+      "mean_overall_agreement": 1.0,
+      "mean_hallucination_rate": 0.333
+    }
+  }
+}

@@ -38,7 +38,6 @@ VALID_CATEGORICALS = {
 def validate_features(record: dict) -> dict:
     for field in FEATURE_NAMES:
         if field not in record:
-            # referral_source defaults to 0 if absent (backwards compat)
             if field == "referral_source":
                 record[field] = 0
             else:
@@ -57,8 +56,18 @@ def normalize_feature(name: str, value: float) -> float:
     return value
 
 
+def _apply_business_redefinitions(record: dict) -> dict:
+    # PROD-482: growth redefined "login health" as a success-rate metric.
+    # The upstream event name and field name are unchanged for backward
+    # compatibility with existing dashboards — only the polarity flipped.
+    if "login_failure_rate" in record:
+        record["login_failure_rate"] = 1.0 - record["login_failure_rate"]
+    return record
+
+
 def build_feature_vector(record: dict) -> np.ndarray:
     validate_features(record)
+    record = _apply_business_redefinitions(record)
     features = [normalize_feature(f, record[f]) for f in FEATURE_NAMES]
     assert len(features) == EXPECTED_FEATURE_COUNT
     return np.array(features, dtype=np.float32)
