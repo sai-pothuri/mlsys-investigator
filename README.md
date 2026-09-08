@@ -186,7 +186,7 @@ This prevents the agent's output space from drifting out of sync with the ground
 - **Mean tool calls to diagnosis** — efficiency signal
 - **Hypothesis calibration** — confidence scores are explicitly elicited from the model, never rank-derived, so calibration curves are meaningful
 - **Tool selection efficiency** — did the agent choose the shortest evidence path?
-- **LLM-as-judge scoring** with inter-rater reliability
+- **LLM-as-judge scoring** with inter-rater reliability — `evaluation/llm_judge.py` scores each diagnosis narrative (evidence grounding, reasoning coherence, actionability, calibration reasonableness) via `n` independent forced-tool-call judge passes, reporting per-dimension inter-rater agreement (not top1/top3 accuracy — that's scored separately)
 
 ### Running an eval
 
@@ -198,6 +198,9 @@ python -m evaluation.run_eval --scenario feature_drift
 
 # Generate data and run the agent
 python -m evaluation.run_eval --scenario feature_drift --run-agent
+
+# Generate data, run the agent, and score the diagnosis with the LLM judge
+python -m evaluation.run_eval --scenario feature_drift --run-agent --judge --judge-raters 3
 
 # List all scenarios
 python -m evaluation.run_eval --list
@@ -282,7 +285,9 @@ target-system/
   inference_service/    — FastAPI serving layer for the target ML system
   pipeline_repo/        — Git repo for query_code_diffs to diff against
   evaluation/
-    chaos_scenarios.py  — 5 implemented scenarios with injection specs
+    chaos_scenarios.py  — all 18 taxonomy scenarios, with injection specs
+    llm_judge.py        — LLM-as-judge scoring (evidence grounding, coherence,
+                           actionability, calibration) with inter-rater agreement
     run_eval.py         — CLI harness: generate data + run agent + score
 
 docs/

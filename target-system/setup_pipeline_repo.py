@@ -52,20 +52,164 @@ def commit(repo: str, message: str, date_iso: str) -> str:
     return sha
 
 
+def _read_existing_shas(repo_dir: str) -> dict[str, str]:
+    shas = {}
+    log = run(["git", "log", "--oneline"], cwd=repo_dir)
+    for line in log.splitlines():
+        sha, *msg_parts = line.split(" ", 1)
+        msg = msg_parts[0] if msg_parts else ""
+        if "Initial commit" in msg:              shas["sha_1"] = run(["git", "rev-parse", sha], cwd=repo_dir)
+        elif "Add feature normalization" in msg: shas["sha_2"] = run(["git", "rev-parse", sha], cwd=repo_dir)
+        elif "Add referral_source" in msg:       shas["sha_3"] = run(["git", "rev-parse", sha], cwd=repo_dir)
+        elif "Tune XGBoost" in msg:               shas["sha_4"] = run(["git", "rev-parse", sha], cwd=repo_dir)
+        elif "pre-normalize monetary" in msg:     shas["sha_skew"] = run(["git", "rev-parse", sha], cwd=repo_dir)
+        elif "PROD-482" in msg:                   shas["sha_inversion"] = run(["git", "rev-parse", sha], cwd=repo_dir)
+    return shas
+
+
+def _ensure_trailing_commits(repo_dir: str, shas: dict[str, str]) -> None:
+    """Append the two chaos-scenario-only commits (training/serving skew,
+    feature-importance inversion) if they aren't already in the history.
+    Safe to call whether the repo was just created or already existed —
+    only writes commits that are actually missing, so it never duplicates
+    history on a rerun."""
+    log = run(["git", "log", "--oneline", "--all"], cwd=repo_dir)
+
+    if "pre-normalize monetary" not in log:
+        write(repo_dir, "serve.py", """\
+            \"\"\"Simple inference server wrapping the XGBoost model.\"\"\"
+            import joblib
+            import numpy as np
+            from feature_engineering import build_feature_vector, FEATURE_NAMES
+
+
+            _model = joblib.load("artifacts/model.pkl")
+            _scaler = joblib.load("artifacts/scaler.pkl")
+
+            REQUEST_TIMEOUT_MS = 250   # bumped from 200ms (see ops ticket OPS-1142)
+            WORKER_POOL_SIZE = 6       # bumped from 4 (p99 latency SLA breach under load)
+
+            # Perf: pre-normalize monetary features before the scaler runs, to cut
+            # histogram-binning instability reported in INFRA-2290. NOTE: this is a
+            # serving-only optimization — train_model.py's StandardScaler pipeline
+            # was not updated to match, so these two features are now log1p'd twice
+            # relative to how the model was trained.
+            _MONETARY_FEATURES = {"monthly_spend", "avg_transaction_value"}
+
+
+            def _fast_log_transform(x: float) -> float:
+                return float(np.log1p(max(x, 0.0)))
+
+
+            def predict(record: dict) -> dict:
+                for f in _MONETARY_FEATURES:
+                    if f in record:
+                        record[f] = _fast_log_transform(record[f])
+                features = build_feature_vector(record)
+                X = _scaler.transform(features.reshape(1, -1))
+                proba = float(_model.predict_proba(X)[0, 1])
+                return {"prediction": int(proba >= 0.5), "probability": proba}
+
+
+            def get_features(request_id: str, timeout: float = 0.25):
+                features = feature_store.lookup(request_id, timeout=timeout)
+                return features
+            """)
+        shas["sha_skew"] = commit(
+            repo_dir,
+            "Perf: pre-normalize monetary features in serving path (INFRA-2290)",
+            _ts(5, 0),
+        )
+
+    if "PROD-482" not in log:
+        write(repo_dir, "feature_engineering.py", """\
+            \"\"\"Feature engineering pipeline for churn classifier.\"\"\"
+            import numpy as np
+
+
+            FEATURE_NAMES = [
+                "account_age_days",
+                "monthly_spend",
+                "num_transactions_30d",
+                "avg_transaction_value",
+                "days_since_last_login",
+                "support_tickets_90d",
+                "product_category",
+                "region",
+                "device_type",
+                "login_failure_rate",
+                "session_duration_min",
+                "referral_source",   # NEW: 0=organic, 1=paid, 2=partner, 3=unknown
+            ]
+            EXPECTED_FEATURE_COUNT = len(FEATURE_NAMES)
+
+            CLIP_BOUNDS = {
+                "account_age_days":     (0, 3650),
+                "monthly_spend":        (0, 10000),
+                "num_transactions_30d": (0, 500),
+                "days_since_last_login": (0, 365),
+                "support_tickets_90d":  (0, 50),
+                "session_duration_min": (0, 120),
+            }
+
+            VALID_CATEGORICALS = {
+                "product_category": {0, 1, 2},
+                "region":           {0, 1, 2, 3, 4},
+                "device_type":      {0, 1, 2},
+                "referral_source":  {0, 1, 2, 3},
+            }
+
+
+            def validate_features(record: dict) -> dict:
+                for field in FEATURE_NAMES:
+                    if field not in record:
+                        if field == "referral_source":
+                            record[field] = 0
+                        else:
+                            raise ValidationError(f"Missing required field: {field}")
+                for cat, valid in VALID_CATEGORICALS.items():
+                    if record.get(cat) not in valid:
+                        import warnings
+                        warnings.warn(f"Unexpected value for {cat}: {record[cat]}")
+                return record
+
+
+            def normalize_feature(name: str, value: float) -> float:
+                if name in CLIP_BOUNDS:
+                    lo, hi = CLIP_BOUNDS[name]
+                    return float(np.clip(value, lo, hi))
+                return value
+
+
+            def _apply_business_redefinitions(record: dict) -> dict:
+                # PROD-482: growth redefined "login health" as a success-rate metric.
+                # The upstream event name and field name are unchanged for backward
+                # compatibility with existing dashboards — only the polarity flipped.
+                if "login_failure_rate" in record:
+                    record["login_failure_rate"] = 1.0 - record["login_failure_rate"]
+                return record
+
+
+            def build_feature_vector(record: dict) -> np.ndarray:
+                validate_features(record)
+                record = _apply_business_redefinitions(record)
+                features = [normalize_feature(f, record[f]) for f in FEATURE_NAMES]
+                assert len(features) == EXPECTED_FEATURE_COUNT
+                return np.array(features, dtype=np.float32)
+            """)
+        shas["sha_inversion"] = commit(
+            repo_dir,
+            "Redefine login_failure_rate polarity per PROD-482 (field name unchanged)",
+            _ts(5, 1),
+        )
+
+
 def setup(repo_dir: str) -> dict[str, str]:
     """Create the repo. Returns mapping of label → commit SHA."""
     if os.path.exists(os.path.join(repo_dir, ".git")):
-        print(f"Repo already exists at {repo_dir!r}. Remove it to re-create.")
-        # Still read existing SHAs
-        shas = {}
-        log = run(["git", "log", "--oneline"], cwd=repo_dir)
-        for line in log.splitlines():
-            sha, *msg_parts = line.split(" ", 1)
-            msg = msg_parts[0] if msg_parts else ""
-            if "Initial commit" in msg:           shas["sha_1"] = run(["git", "rev-parse", sha], cwd=repo_dir)
-            elif "Add feature normalization" in msg: shas["sha_2"] = run(["git", "rev-parse", sha], cwd=repo_dir)
-            elif "Add referral_source" in msg:    shas["sha_3"] = run(["git", "rev-parse", sha], cwd=repo_dir)
-            elif "Tune XGBoost" in msg:           shas["sha_4"] = run(["git", "rev-parse", sha], cwd=repo_dir)
+        print(f"Repo already exists at {repo_dir!r}. Reusing it; appending any missing commits.")
+        shas = _read_existing_shas(repo_dir)
+        _ensure_trailing_commits(repo_dir, shas)
         return shas
 
     os.makedirs(repo_dir, exist_ok=True)
@@ -460,6 +604,13 @@ def setup(repo_dir: str) -> dict[str, str]:
         """)
 
     shas["sha_4"] = commit(repo_dir, "Upgrade xgboost 1.7.6 → 2.0.3", _ts(6, 7))
+
+    # -----------------------------------------------------------------------
+    # Commits 8-9 — chaos-scenario-only commits (training_serving_skew,
+    # feature_importance_inversion). Not part of the default deploy history;
+    # only referenced by chaos_scenarios.py.
+    # -----------------------------------------------------------------------
+    _ensure_trailing_commits(repo_dir, shas)
 
     # -----------------------------------------------------------------------
     # Print SHA summary for defaults.py

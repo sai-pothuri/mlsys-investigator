@@ -46,8 +46,8 @@ from evaluation.chaos_scenarios import SCENARIOS, InjectionScenario
 def generate_scenario_data(scenario: InjectionScenario, output_dir: str) -> None:
     config = make_default_config(n_days=7)
     config.output_dir = output_dir
-    config.label_delay_hours = 0.0
-    config.overrides = [scenario.sub_range]
+    config.label_delay_hours = scenario.label_delay_hours
+    config.overrides = scenario.sub_ranges
     config.deployment_events = scenario.deployment_events
     config.seed = 42
 
@@ -57,6 +57,10 @@ def generate_scenario_data(scenario: InjectionScenario, output_dir: str) -> None
 
     _inject_diagnostic_logs(output_dir, scenario.diagnostic_logs)
     print(f"Injected {len(scenario.diagnostic_logs)} diagnostic log entries.")
+
+    _inject_metric_overrides(output_dir, scenario.metric_overrides)
+    if scenario.metric_overrides:
+        print(f"Injected {len(scenario.metric_overrides)} metric override rows.")
 
 
 def _inject_diagnostic_logs(output_dir: str, logs: list[dict]) -> None:
@@ -71,6 +75,30 @@ def _inject_diagnostic_logs(output_dir: str, logs: list[dict]) -> None:
         "INSERT OR REPLACE INTO logs (log_id, timestamp, severity, service, message, context) "
         "VALUES (:log_id, :timestamp, :severity, :service, :message, :context)",
         logs,
+    )
+    con.commit()
+    con.close()
+
+
+def _inject_metric_overrides(output_dir: str, overrides: list[dict]) -> None:
+    """Replace the organically-generated metric row at each (timestamp,
+    metric_name) with the scenario's override — used only for signals the
+    feature-driven simulation can't produce on its own (corrupted labels,
+    miscalibrated confidence, a leaking shadow model). See
+    chaos_scenarios._metric_override()."""
+    if not overrides:
+        return
+    db_path = os.path.join(output_dir, "metrics.db")
+    con = sqlite3.connect(db_path)
+    for row in overrides:
+        con.execute(
+            "DELETE FROM metrics WHERE timestamp = ? AND metric_name = ?",
+            (row["timestamp"], row["metric_name"]),
+        )
+    con.executemany(
+        "INSERT INTO metrics (timestamp, metric_name, metric_value, service, tags) "
+        "VALUES (:timestamp, :metric_name, :metric_value, :service, :tags)",
+        overrides,
     )
     con.commit()
     con.close()
@@ -118,7 +146,13 @@ def _print_metric_summary(output_dir: str, scenario: InjectionScenario) -> None:
 # Agent run + scoring
 # ---------------------------------------------------------------------------
 
-def run_agent_and_score(scenario: InjectionScenario, output_dir: str, verbose: bool = True) -> dict:
+def run_agent_and_score(
+    scenario: InjectionScenario,
+    output_dir: str,
+    verbose: bool = True,
+    judge: bool = False,
+    judge_raters: int = 3,
+) -> dict:
     os.environ["MLSYS_DATA_DIR"] = str(output_dir)
 
     # Import after setting env var so _DATA_DIR picks up the override.
@@ -168,6 +202,16 @@ def run_agent_and_score(scenario: InjectionScenario, output_dir: str, verbose: b
     print(f"  Top-3 correct: {top3_correct}")
     print(f"  Tool calls   : {graph.tool_calls_used}/{graph.tool_call_budget}")
     print(f"  Elapsed      : {elapsed:.1f}s")
+
+    if judge and diagnosis is not None:
+        from evaluation.llm_judge import judge_diagnosis
+        print(f"\n── LLM-as-judge ({judge_raters} raters) ──────────────────────")
+        judge_result = judge_diagnosis(scenario.alert, graph, diagnosis, n_raters=judge_raters)
+        print(judge_result.summary())
+        result["judge"] = judge_result.to_dict()
+    elif judge:
+        print("\n[judge] skipped — no diagnosis was produced")
+
     return result
 
 
@@ -205,6 +249,17 @@ def main() -> None:
         action="store_true",
         help="Suppress agent verbose output.",
     )
+    parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="After --run-agent, score the diagnosis narrative with the LLM judge (see evaluation/llm_judge.py).",
+    )
+    parser.add_argument(
+        "--judge-raters",
+        type=int,
+        default=3,
+        help="Number of independent judge passes for inter-rater agreement (default: 3).",
+    )
     args = parser.parse_args()
 
     if args.list:
@@ -218,6 +273,8 @@ def main() -> None:
 
     if not args.scenario:
         parser.error("--scenario is required (or --list to see options)")
+    if args.judge and not args.run_agent:
+        parser.error("--judge requires --run-agent (there is no diagnosis to score otherwise)")
 
     scenario = SCENARIOS[args.scenario]
 
@@ -242,7 +299,10 @@ def main() -> None:
     print(f"    (edit agent.py ALERT and investigation_start to match above)")
 
     if args.run_agent:
-        result = run_agent_and_score(scenario, output_dir, verbose=not args.quiet)
+        result = run_agent_and_score(
+            scenario, output_dir, verbose=not args.quiet,
+            judge=args.judge, judge_raters=args.judge_raters,
+        )
         print("\n── Result JSON ─────────────────────────────────────────────")
         print(json.dumps(result, indent=2))
 
